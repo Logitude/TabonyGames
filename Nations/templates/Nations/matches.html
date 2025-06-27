@@ -1,0 +1,17 @@
+{% extends 'Nations/base.html' %}
+
+{% block content %}
+    <h1>Ongoing Nations Matches</h1>
+    <div class="py-1">
+        {% if ongoing_matches %}
+            {% for match in ongoing_matches %}
+                {% include 'Nations/match_card.html' %}
+            {% endfor %}
+        {% else %}
+            <ul>
+                <li>None.</li>
+            </ul>
+        {% endif %}
+    </div>
+    <h2><a href="{% url 'Nations:archive_ongoing' %}">Archived</a></h2>
+{% endblock %}

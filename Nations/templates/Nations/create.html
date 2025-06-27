@@ -1,0 +1,110 @@
+{% extends 'Nations/base.html' %}
+
+{% load static %}
+{% load widget_tweaks %}
+
+{% block content %}
+    <div class="d-grid gap-3">
+        <h1>Create Nations Match</h1>
+        <div>
+            <form method="post" action="{% url 'Nations:create' %}">
+                {% csrf_token %}
+                <div class="d-grid gap-3">
+                    {% for field in form %}
+                        {% if field.name == 'player1' %}
+                            <h4>For private matches, fill in every player field!</h4>
+                        {% endif %}
+                        {% if field.name == 'extra_draft_nations' %}
+                            <h2>Optional House Rules:</h2>
+                        {% endif %}
+                        <div id="div_{{ field.name }}" class="form-group">
+                            {% if field.field.widget.attrs.class == 'form-check-input' %}
+                                <div class="col-9 px-0">
+                                    <div class="row">
+                                        <div class="col align-self-center">
+                                                {% render_field field %}
+                                                <label class="form-check-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                        </div>
+                                        <div class="col align-self-center">
+                                            {% if field.name == 'resource_remainder_tiebreaker' %}
+                                                <p>(The remainder after dividing a player's resources by 10 will be used as their tiebreaker. Only if still tied will ties be broken in turn order.)</p>
+                                            {% endif %}
+                                            {% if field.name == 'card_draw_limits' %}
+                                                <img src="{% static 'public/Nations/CardLimits.png' %}">
+                                            {% endif %}
+                                            {% if field.name == 'weighted_card_draw' %}
+                                                <img src="{% static 'public/Nations/CardWeights.png' %}">
+                                            {% endif %}
+                                            {% if field.name == 'korea_nerf' %}
+                                                <img src="{% static 'public/Nations/KoreaNerf.jpg' %}">
+                                            {% endif %}
+                                            {% if field.name == 'lincoln_nerf' %}
+                                                <img src="{% static 'public/Nations/LincolnNerf.jpg' %}">
+                                                <p>("remove" meaning remove Lincoln upon taking the 2 workers. With 1 or 0 ungrown workers, you take that many.)</p>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            {% elif field.field.widget.attrs.class == 'form-select' %}
+                                <div class="col-6 px-0">
+                                    <div class="form-floating">
+                                        {% render_field field %}
+                                        <label class="form-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                    </div>
+                                </div>
+                            {% else %}
+                                <div class="col-6 px-0">
+                                    <label class="form-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                    {% render_field field class="form-control" %}
+                                </div>
+                            {% endif %}
+                            {% for error_message in field.errors %}
+                                <div>
+                                    <small id="id_{{ field.name }}" class="text-danger">{{ error_message }}</small>
+                                </div>
+                            {% endfor %}
+                            {% if field.help_text %}
+                                <div>
+                                    <small id="id_{{ field.name }}" class="text-mutex">{{ field.help_text }}</small>
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                    <div>
+                        <button class="btn btn-primary" type="submit">Create Match</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+    {{ user.username | json_script:"username" }}
+    {{ user.is_superuser | json_script:"is-superuser" }}
+    <script>
+        const username = JSON.parse(document.getElementById('username').textContent);
+        const is_superuser = JSON.parse(document.getElementById('is-superuser').textContent);
+        if (!is_superuser) {
+            const player1_name = document.getElementById('id_player1');
+            player1_name.value = username;
+        }
+        const player_count_input = document.getElementById('id_player_count');
+        function show_hide_players() {
+            const player_count = player_count_input.value;
+            for (var i = 3; i <= 6; i++) {
+                const player_div = document.getElementById('div_player' + i);
+                if (i <= player_count) {
+                    player_div.style.display = 'block';
+                } else {
+                    player_div.style.display = 'none';
+                    const player_name = document.getElementById('id_player' + i);
+                    player_name.value = '';
+                }
+            }
+        }
+        player_count_input.addEventListener('change', (event) =>
+            {
+                show_hide_players();
+            }
+        );
+        show_hide_players();
+    </script>
+{% endblock %}

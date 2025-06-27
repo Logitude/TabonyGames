@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <link rel="icon" type="image/png" href="/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="shortcut icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/site.webmanifest" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-KyZXEAg3QhqLMpG8r+8fhAXLRk2vvoC2f3B09zVXn8CA5QIVfZOJ3BCsw2P0p/We" crossorigin="anonymous">
+    <style>
+        a
+        {
+            text-decoration: none !important;
+        }
+        .navbar-brand
+        {
+            font-size: 2rem !important;
+        }
+    </style>
+    <title>{% if turns %}({{ turns }}) {% endif %}Nations</title>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg" style="background-color: #f0f0f0; border-bottom: 2px solid black;">
+        <div class="container-fluid">
+            <div class="navbar-brand me-auto">
+                <a href="{% url 'home' %}">Tabony Games</a>/<a href="{% url 'Nations:home' %}">Nations</a>
+            </div>
+            <div class="navbar-nav">
+                {% if user.is_authenticated %}
+                    <span class="navbar-text py-0 me-3">Welcome, {{ user.username }}!</span>
+                    <a id="my_matches_link" class="nav-link py-0" href="{% url 'Nations:my_matches' %}">({{ turns }}) Matches</a>
+                    <a class="nav-link py-0" href="{% url 'profile' %}">Settings</a>
+                    <a class="nav-link py-0" href="{% url 'logout' %}">Log Out</a>
+                {% else %}
+                    <a class="nav-link py-0" href="{% url 'signup' %}">Sign Up</a>
+                    <a class="nav-link py-0" href="{% url 'login' %}">Log In</a>
+                {% endif %}
+            </div>
+        </div>
+    </nav>
+    <div id="page" class="w-100">
+        <div id="content" class="container py-4">
+            {% block content %}
+            {% endblock %}
+        </div>
+    </div>
+    {% if not match %}
+        <script>
+            const date_format_options = {'year': 'numeric', 'month': 'numeric', 'day': 'numeric', 'hour': 'numeric', 'minute': 'numeric', 'second': 'numeric', 'hour12': false};
+            const date_formatter = new Intl.DateTimeFormat('en-US', date_format_options);
+
+            function format_date(date) {
+                const parts = date_formatter.formatToParts(date);
+                var year = 0;
+                var month = 0;
+                var day = 0;
+                var hour = 0;
+                var minute = 0;
+                var second = 0;
+                for (var i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+                    if (part['type'] == 'year') {
+                        year = part['value'];
+                    } else if (part['type'] == 'month') {
+                        month = part['value'];
+                    } else if (part['type'] == 'day') {
+                        day = part['value'];
+                    } else if (part['type'] == 'hour') {
+                        hour = part['value'].replace(/^0*(.+)/, '$1');
+                    } else if (part['type'] == 'minute') {
+                        minute = part['value'];
+                    } else if (part['type'] == 'second') {
+                        second = part['value'];
+                    }
+                }
+                return year + '-' + month + '-' + day + ' ' + hour + ':' + minute;
+            }
+
+            function convert_dates() {
+                const match_timestamps = document.querySelectorAll('[id^="match_time_"]');
+                for (var i = 0; i < match_timestamps.length; i++) {
+                    const match_timestamp = match_timestamps[i];
+                    match_timestamp.innerHTML = format_date(new Date(match_timestamp.innerHTML));
+                }
+            }
+            convert_dates();
+
+            {% if user.is_authenticated %}
+                const websocket_prefix = 'wss://';
+                var info_socket = null;
+                var info_socket_connecting = false;
+                var info_socket_open = false;
+                var reopen_timer = null;
+                var reopen_timeout = 500;
+
+                function set_page_title(event) {
+                    if (!sessionStorage.getItem('page_title')) {
+                        sessionStorage.setItem('page_title', 'Nations');
+                    }
+                    document.title = sessionStorage.getItem('page_title');
+                }
+
+                function set_reopen_timer() {
+                    if (reopen_timer) {
+                        return;
+                    }
+                    if (reopen_timeout < 100000) {
+                        reopen_timer = setTimeout(reopen_info_socket_if_necessary, reopen_timeout);
+                    }
+                }
+
+                function clear_reopen_timer() {
+                    if (reopen_timer) {
+                        clearTimeout(reopen_timer);
+                        reopen_timer = null;
+                    }
+                }
+
+                function opened(event) {
+                    reopen_timeout = 500;
+                    clear_reopen_timer();
+                    info_socket_connecting = false;
+                    info_socket_open = true;
+                    info_socket.send(JSON.stringify(null));
+                }
+
+                function got_message(event) {
+                    const data = JSON.parse(event.data);
+                    if (data && Object.hasOwn(data, 'turns')) {
+                        const turns = data['turns'];
+                        var my_matches_link = document.getElementById('my_matches_link');
+                        my_matches_link.innerHTML = '(' + turns + ') Matches';
+                        var page_title;
+                        if (turns) {
+                            page_title = '(' + turns + ') Nations';
+                        } else {
+                            page_title = 'Nations';
+                        }
+                        sessionStorage.setItem('page_title', page_title);
+                        set_page_title(null);
+                    }
+                }
+
+                function closed(event) {
+                    set_reopen_timer();
+                    info_socket_connecting = false;
+                    info_socket_open = false;
+                }
+
+                function errored(event) {
+                    info_socket_connecting = false;
+                    info_socket_open = false;
+                    reopen_timeout *= 2;
+                    set_reopen_timer();
+                }
+
+                function reopen_info_socket_if_necessary(event) {
+                    clear_reopen_timer();
+                    if (!info_socket || !(info_socket_open || info_socket_connecting)) {
+                        if (info_socket) {
+                            info_socket.addEventListener('error', (event) => {});
+                            info_socket.addEventListener('close', (event) => {});
+                            info_socket.close();
+                            info_socket = null;
+                        }
+                        info_socket = new WebSocket(websocket_prefix + window.location.host + '/ws/nations/');
+                        info_socket_open = false;
+                        info_socket_connecting = true;
+                        info_socket.addEventListener('message', got_message);
+                        info_socket.addEventListener('open', opened);
+                        info_socket.addEventListener('close', closed);
+                        info_socket.addEventListener('error', errored);
+                    }
+                }
+
+                function eventually_set_page_title(event) {
+                    setTimeout(set_page_title, 100);
+                }
+
+                function if_not_hidden_reopen_info_socket_if_necessary(event) {
+                    if (!document.hidden) {
+                        reopen_info_socket_if_necessary(null);
+                    }
+                }
+
+                reopen_info_socket_if_necessary(null);
+
+                document.addEventListener('visibilitychange', if_not_hidden_reopen_info_socket_if_necessary);
+                window.addEventListener('focus', reopen_info_socket_if_necessary);
+                window.addEventListener('resume', reopen_info_socket_if_necessary);
+                window.addEventListener('online', reopen_info_socket_if_necessary);
+                window.addEventListener('load', eventually_set_page_title);
+            {% endif %}
+        </script>
+    {% endif %}
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-U1DAWAznBHeqEIlVSCgzq+c9gqGAJn5c/t99JyeKa9xxaYpSvHU5awsuZVVFIhvj" crossorigin="anonymous"></script>
+</body>
+</html>

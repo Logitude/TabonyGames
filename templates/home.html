@@ -1,0 +1,9 @@
+{% extends 'base.html' %}
+
+{% block content %}
+    <h1><a href="/forum/index.php">Forum</a></h1>
+        <h2 class="ms-5">&ndash; <a href="/forum/viewtopic.php?t=46">Getting Started</a></h2>
+        <h2 class="ms-5">&ndash; <a href="/forum/viewtopic.php?t=61">Change Log</a></h2>
+        <h2 class="ms-5">&ndash; <a href="/forum/viewtopic.php?t=69">Card Draw</a> ← Changed!</h2>
+    <h1><a id="nations_link" href="{% url 'Nations:home' %}">Nations{% if turns.Nations %} ({{ turns.Nations }}){% endif %}</a></h1>
+{% endblock %}

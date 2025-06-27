@@ -1,0 +1,3072 @@
+{% extends 'Nations/base.html' %}
+
+{% load static %}
+{% load widget_tweaks %}
+
+{% block content %}
+    <style>
+        .font-size-15 {
+            font-size: 1.5rem;
+        }
+    </style>
+    <p class="mx-2 my-0 font-size-15">Title: <span class="fw-bold">{{ match.title }}</span></p>
+    <p class="mx-2 my-0 font-size-15">Type: <span class="fw-bold">{{ match.match_type }}</span>{% if match.house_rules %}, ({{ match.house_rules }}){% endif %}</p>
+    <p class="mx-2 my-0 font-size-15" id="player-names"></p>
+    <div class="py-1 w-100">
+        <div id="vertical-logs" class="row py-0 w-100">
+            <div id="chat-log-div" class="py-0 mx-0" style="min-width: 550px; max-width: 700px;">
+                <div class="border border-2 mw-100" id="chat-log" style="height: 290px; overflow-y: scroll; background-color: #f0f0f0; color: #000000;"></div>
+                {% if user.is_authenticated %}
+                    <input type="text" id="chat-input" maxlength="255" placeholder="Consider all chat permanently public." style="width: 100%;" spellcheck="true">
+                {% else %}
+                    <input type="text" id="chat-input" maxlength="255" placeholder="Log in to chat." style="width: 100%;" disabled="true">
+                {% endif %}
+            </div>
+            <div id="match-log-div" class="py-0 mx-0" style="min-width: 550px; max-width: 700px;">
+                <textarea readonly id="match-log" rows="13" style="width: 100%; background-color: #000000; color: #e0e0e0;">Match Log</textarea>
+            </div>
+        </div>
+        <div id="horizontal-logs" class="row row-cols-2 gx-0">
+            <div id="log-col-left" class="col mx-0">
+            </div>
+            <div id="log-col-right" class="col mx-0">
+            </div>
+        </div>
+        <div id="game-row" class="row py-0 gx-0 w-100">
+            <div id="game-div" class="col py-0 mx-0">
+                <canvas id="game" width="1930" height="60"></canvas>
+            </div>
+            <div id="side-logs" class="col py-0 mx-0">
+            </div>
+        </div>
+    </div>
+    <div class="py-1">
+        <div class="row row-cols-5">
+            <div class="col col-md-auto">
+                <button id="button-scale-50" class="btn btn-primary">Scale 50%</button>
+            </div>
+            <div class="col col-md-auto">
+                <button id="button-scale-60" class="btn btn-primary">Scale 60%</button>
+            </div>
+            <div class="col col-md-auto">
+                <button id="button-scale-75" class="btn btn-primary">Scale 75%</button>
+            </div>
+            <div class="col col-md-auto">
+                <button id="button-scale-100" class="btn btn-primary">Scale 100%</button>
+            </div>
+            <div class="col col-md-auto">
+                <button id="button-scale-custom" class="btn btn-primary">Scale Custom %:</button>
+                <input type="text" id="custom-scale" placeholder="60" style="width: 70px;">
+            </div>
+        </div>
+        <div class="row row-cols-1">
+            <div class="col col-md-auto">
+                <input type="checkbox" id="save-cookie" class="form-check-input">
+                <label class="form-check-label" for="save-cookie">Save a cookie to this device to remember this setting in this browser.</label>
+            </div>
+        </div>
+    </div>
+    {{ match.match_id | json_script:"match-id" }}
+    {{ match.player_count | json_script:"player-count" }}
+    {{ match.growth_resources | json_script:"growth-resources" }}
+    {{ user.username | json_script:"username" }}
+    {{ user.is_superuser | json_script:"is-superuser" }}
+    {{ player_preferences.colors | json_script:"player-color-preferences" }}
+    {{ player_preferences.symbols | json_script:"player-symbols" }}
+    {{ abbrs | json_script:"card-abbrs" }}
+    <script>
+        const match_id = JSON.parse(document.getElementById('match-id').textContent);
+        const player_count = JSON.parse(document.getElementById('player-count').textContent);
+        const growth_resources = JSON.parse(document.getElementById('growth-resources').textContent);
+        const username = JSON.parse(document.getElementById('username').textContent);
+        const is_superuser = JSON.parse(document.getElementById('is-superuser').textContent);
+        const player_color_preferences = JSON.parse(document.getElementById('player-color-preferences').textContent).split(', ');
+        const player_symbols = JSON.parse(document.getElementById('player-symbols').textContent);
+        const abbrs = JSON.parse(document.getElementById('card-abbrs').textContent);
+
+        const websocket_prefix = 'wss://';
+        const background_color = '#fff8dc';
+        const disabled_background_color = '#c0c0c0';
+        const disabled_text_color = '#808080';
+        const player_color_codes = {
+            'Blue': '#2d4aff',
+            'Cyan': '#00efea',
+            'Green': '#22a11d',
+            'Orange': '#e06a28',
+            'Pink': '#fe4ba2',
+            'Purple': '#aa3ce3',
+            'Red': '#fa0c00',
+            'Yellow': '#efd60d'
+        };
+        const player_text_color_codes = {
+            'Blue': '#ffffff',
+            'Cyan': '#000000',
+            'Green': '#ffffff',
+            'Orange': '#ffffff',
+            'Pink': '#ffffff',
+            'Purple': '#ffffff',
+            'Red': '#ffffff',
+            'Yellow': '#000000'
+        };
+        var images = {
+            'Board': {
+                'src': "{% static 'public/Nations/Board.jpg' %}",
+                'image': null
+            },
+            'Round': {
+                'src': "{% static 'public/Nations/Round.png' %}",
+                'image': null
+            },
+            'ArchitectBig': {
+                'src': "{% static 'public/Nations/ArchitectBig.png' %}",
+                'image': null
+            },
+            'ArchitectMedium': {
+                'src': "{% static 'public/Nations/ArchitectMedium.png' %}",
+                'image': null
+            },
+            'Architect': {
+                'src': "{% static 'public/Nations/Architect.png' %}",
+                'image': null
+            },
+            'Food': {
+                'src': "{% static 'public/Nations/Food.png' %}",
+                'image': null
+            },
+            'Stone': {
+                'src': "{% static 'public/Nations/Stone.png' %}",
+                'image': null
+            },
+            'Gold': {
+                'src': "{% static 'public/Nations/Gold.png' %}",
+                'image': null
+            },
+            'Book': {
+                'src': "{% static 'public/Nations/Book.png' %}",
+                'image': null
+            },
+            'Stability': {
+                'src': "{% static 'public/Nations/Stability.png' %}",
+                'image': null
+            },
+            'Military': {
+                'src': "{% static 'public/Nations/Military.png' %}",
+                'image': null
+            },
+            'Point': {
+                'src': "{% static 'public/Nations/Point.png' %}",
+                'image': null
+            },
+            'FoodBig': {
+                'src': "{% static 'public/Nations/FoodBig.png' %}",
+                'image': null
+            },
+            'StoneBig': {
+                'src': "{% static 'public/Nations/StoneBig.png' %}",
+                'image': null
+            },
+            'GoldBig': {
+                'src': "{% static 'public/Nations/GoldBig.png' %}",
+                'image': null
+            },
+            'BookBig': {
+                'src': "{% static 'public/Nations/BookBig.png' %}",
+                'image': null
+            },
+            'StabilityBig': {
+                'src': "{% static 'public/Nations/StabilityBig.png' %}",
+                'image': null
+            },
+            'MilitaryBig': {
+                'src': "{% static 'public/Nations/MilitaryBig.png' %}",
+                'image': null
+            },
+            'PointBig': {
+                'src': "{% static 'public/Nations/PointBig.png' %}",
+                'image': null
+            },
+            'MarkerBig': {
+                'src': "{% static 'public/Nations/MarkerBig.png' %}",
+                'image': null
+            },
+            'Marker': {
+                'src': "{% static 'public/Nations/Marker.png' %}",
+                'image': null
+            },
+            'PlayerBlue': {
+                'src': "{% static 'public/Nations/PlayerBlue.png' %}",
+                'image': null
+            },
+            'PlayerCyan': {
+                'src': "{% static 'public/Nations/PlayerCyan.png' %}",
+                'image': null
+            },
+            'PlayerGreen': {
+                'src': "{% static 'public/Nations/PlayerGreen.png' %}",
+                'image': null
+            },
+            'PlayerOrange': {
+                'src': "{% static 'public/Nations/PlayerOrange.png' %}",
+                'image': null
+            },
+            'PlayerPink': {
+                'src': "{% static 'public/Nations/PlayerPink.png' %}",
+                'image': null
+            },
+            'PlayerPurple': {
+                'src': "{% static 'public/Nations/PlayerPurple.png' %}",
+                'image': null
+            },
+            'PlayerRed': {
+                'src': "{% static 'public/Nations/PlayerRed.png' %}",
+                'image': null
+            },
+            'PlayerYellow': {
+                'src': "{% static 'public/Nations/PlayerYellow.png' %}",
+                'image': null
+            },
+            'PassedPlayerBlue': {
+                'src': "{% static 'public/Nations/PassedPlayerBlue.png' %}",
+                'image': null
+            },
+            'PassedPlayerCyan': {
+                'src': "{% static 'public/Nations/PassedPlayerCyan.png' %}",
+                'image': null
+            },
+            'PassedPlayerGreen': {
+                'src': "{% static 'public/Nations/PassedPlayerGreen.png' %}",
+                'image': null
+            },
+            'PassedPlayerOrange': {
+                'src': "{% static 'public/Nations/PassedPlayerOrange.png' %}",
+                'image': null
+            },
+            'PassedPlayerPink': {
+                'src': "{% static 'public/Nations/PassedPlayerPink.png' %}",
+                'image': null
+            },
+            'PassedPlayerPurple': {
+                'src': "{% static 'public/Nations/PassedPlayerPurple.png' %}",
+                'image': null
+            },
+            'PassedPlayerRed': {
+                'src': "{% static 'public/Nations/PassedPlayerRed.png' %}",
+                'image': null
+            },
+            'PassedPlayerYellow': {
+                'src': "{% static 'public/Nations/PassedPlayerYellow.png' %}",
+                'image': null
+            },
+            'PlayerBlueSymbol': {
+                'src': "{% static 'public/Nations/PlayerBlueSymbol.png' %}",
+                'image': null
+            },
+            'PlayerCyanSymbol': {
+                'src': "{% static 'public/Nations/PlayerCyanSymbol.png' %}",
+                'image': null
+            },
+            'PlayerGreenSymbol': {
+                'src': "{% static 'public/Nations/PlayerGreenSymbol.png' %}",
+                'image': null
+            },
+            'PlayerOrangeSymbol': {
+                'src': "{% static 'public/Nations/PlayerOrangeSymbol.png' %}",
+                'image': null
+            },
+            'PlayerPinkSymbol': {
+                'src': "{% static 'public/Nations/PlayerPinkSymbol.png' %}",
+                'image': null
+            },
+            'PlayerPurpleSymbol': {
+                'src': "{% static 'public/Nations/PlayerPurpleSymbol.png' %}",
+                'image': null
+            },
+            'PlayerRedSymbol': {
+                'src': "{% static 'public/Nations/PlayerRedSymbol.png' %}",
+                'image': null
+            },
+            'PlayerYellowSymbol': {
+                'src': "{% static 'public/Nations/PlayerYellowSymbol.png' %}",
+                'image': null
+            },
+            'PassedPlayerBlueSymbol': {
+                'src': "{% static 'public/Nations/PassedPlayerBlueSymbol.png' %}",
+                'image': null
+            },
+            'PassedPlayerCyanSymbol': {
+                'src': "{% static 'public/Nations/PassedPlayerCyanSymbol.png' %}",
+                'image': null
+            },
+            'PassedPlayerGreenSymbol': {
+                'src': "{% static 'public/Nations/PassedPlayerGreenSymbol.png' %}",
+                'image': null
+            },
+            'PassedPlayerOrangeSymbol': {
+                'src': "{% static 'public/Nations/PassedPlayerOrangeSymbol.png' %}",
+                'image': null
+            },
+            'PassedPlayerPinkSymbol': {
+                'src': "{% static 'public/Nations/PassedPlayerPinkSymbol.png' %}",
+                'image': null
+            },
+            'PassedPlayerPurpleSymbol': {
+                'src': "{% static 'public/Nations/PassedPlayerPurpleSymbol.png' %}",
+                'image': null
+            },
+            'PassedPlayerRedSymbol': {
+                'src': "{% static 'public/Nations/PassedPlayerRedSymbol.png' %}",
+                'image': null
+            },
+            'PassedPlayerYellowSymbol': {
+                'src': "{% static 'public/Nations/PassedPlayerYellowSymbol.png' %}",
+                'image': null
+            },
+            'SymbolBlue': {
+                'src': "{% static 'public/Nations/SymbolBlue.png' %}",
+                'image': null
+            },
+            'SymbolCyan': {
+                'src': "{% static 'public/Nations/SymbolCyan.png' %}",
+                'image': null
+            },
+            'SymbolGreen': {
+                'src': "{% static 'public/Nations/SymbolGreen.png' %}",
+                'image': null
+            },
+            'SymbolOrange': {
+                'src': "{% static 'public/Nations/SymbolOrange.png' %}",
+                'image': null
+            },
+            'SymbolPink': {
+                'src': "{% static 'public/Nations/SymbolPink.png' %}",
+                'image': null
+            },
+            'SymbolPurple': {
+                'src': "{% static 'public/Nations/SymbolPurple.png' %}",
+                'image': null
+            },
+            'SymbolRed': {
+                'src': "{% static 'public/Nations/SymbolRed.png' %}",
+                'image': null
+            },
+            'SymbolYellow': {
+                'src': "{% static 'public/Nations/SymbolYellow.png' %}",
+                'image': null
+            },
+            'War': {
+                'src': "{% static 'public/Nations/War.png' %}",
+                'image': null
+            },
+            'WorkerBlue': {
+                'src': "{% static 'public/Nations/WorkerBlue.png' %}",
+                'image': null
+            },
+            'WorkerCyan': {
+                'src': "{% static 'public/Nations/WorkerCyan.png' %}",
+                'image': null
+            },
+            'WorkerGreen': {
+                'src': "{% static 'public/Nations/WorkerGreen.png' %}",
+                'image': null
+            },
+            'WorkerOrange': {
+                'src': "{% static 'public/Nations/WorkerOrange.png' %}",
+                'image': null
+            },
+            'WorkerPink': {
+                'src': "{% static 'public/Nations/WorkerPink.png' %}",
+                'image': null
+            },
+            'WorkerPurple': {
+                'src': "{% static 'public/Nations/WorkerPurple.png' %}",
+                'image': null
+            },
+            'WorkerRed': {
+                'src': "{% static 'public/Nations/WorkerRed.png' %}",
+                'image': null
+            },
+            'WorkerYellow': {
+                'src': "{% static 'public/Nations/WorkerYellow.png' %}",
+                'image': null
+            },
+            'Deploy': {
+                'src': "{% static 'public/Nations/Deploy.png' %}",
+                'image': null
+            },
+            'Undeploy': {
+                'src': "{% static 'public/Nations/Undeploy.png' %}",
+                'image': null
+            },
+            'TurmoilBig': {
+                'src': "{% static 'public/Nations/cards/TurmoilBig.jpg' %}",
+                'image': null
+            },
+            'Turmoil': {
+                'src': "{% static 'public/Nations/cards/Turmoil.jpg' %}",
+                'image': null
+            },
+            'BlankBM': {
+                'src': "{% static 'public/Nations/BlankBM.png' %}",
+                'image': null
+            },
+            'BlankColony': {
+                'src': "{% static 'public/Nations/BlankColony.png' %}",
+                'image': null
+            }
+        };
+        const cards_path = "{% static 'public/Nations/cards' %}";
+        const nations_path = "{% static 'public/Nations/nations' %}";
+        const global_effects_path = "{% static 'public/Nations/global' %}";
+        const board_box = [0, 0, 1930, 972];
+        const card_width = 164;
+        const card_height = 254;
+        const resource_image_sizes = {
+            'Food': [43, 39],
+            'Stone': [47, 41],
+            'Gold': [44, 42],
+            'Book': [47, 48]
+        }
+        const board_boxes = {
+            'Round1': [73, 158, 53, 48],
+            'Round2': [147, 158, 53, 48],
+            'Round3': [273, 158, 53, 48],
+            'Round4': [347, 158, 53, 48],
+            'Round5': [73, 258, 53, 48],
+            'Round6': [147, 258, 53, 48],
+            'Round7': [273, 258, 53, 48],
+            'Round8': [347, 258, 53, 48],
+            'Player1': [254, 386, 60, 43],
+            'Player2': [348, 380, 60, 43],
+            'Player3': [431, 427, 60, 43],
+            'Player4': [436, 522, 60, 43],
+            'Player5': [390, 605, 60, 43],
+            'Player6': [310, 630, 60, 43],
+            'Event': [22, 699, card_width, card_height],
+            'War': [316, 700, card_width, card_height],
+            'Architects': [40, 580, 64, 74],
+            'Turmoil': [201, 523, 100, 154],
+            'P41': [586, -257, card_width, card_height],
+            'P42': [754, -257, card_width, card_height],
+            'P43': [922, -257, card_width, card_height],
+            'P44': [1090, -257, card_width, card_height],
+            'P45': [1258, -257, card_width, card_height],
+            'P46': [1426, -257, card_width, card_height],
+            'P47': [1594, -257, card_width, card_height],
+            'P48': [1762, -257, card_width, card_height],
+            'P31': [591, 53, card_width, card_height],
+            'P32': [783, 53, card_width, card_height],
+            'P33': [976, 53, card_width, card_height],
+            'P34': [1168, 53, card_width, card_height],
+            'P35': [1361, 53, card_width, card_height],
+            'P36': [1554, 53, card_width, card_height],
+            'P37': [1747, 53, card_width, card_height],
+            'P38': [1940, 53, card_width, card_height],
+            'P21': [591, 363, card_width, card_height],
+            'P22': [783, 363, card_width, card_height],
+            'P23': [976, 363, card_width, card_height],
+            'P24': [1168, 363, card_width, card_height],
+            'P25': [1361, 363, card_width, card_height],
+            'P26': [1553, 363, card_width, card_height],
+            'P27': [1747, 363, card_width, card_height],
+            'P28': [1940, 363, card_width, card_height],
+            'P11': [591, 671, card_width, card_height],
+            'P12': [783, 671, card_width, card_height],
+            'P13': [976, 671, card_width, card_height],
+            'P14': [1168, 671, card_width, card_height],
+            'P15': [1361, 671, card_width, card_height],
+            'P16': [1554, 671, card_width, card_height],
+            'P17': [1746, 671, card_width, card_height],
+            'P18': [1940, 671, card_width, card_height]
+        };
+        const nation_boxes = {
+            'America': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 34, card_width, card_height],
+                'BM2': [418, 34, card_width, card_height],
+                'BM3': [607, 34, card_width, card_height],
+                'BM4': [798, 34, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            },
+            'Arabs': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 34, card_width, card_height],
+                'BM2': [418, 34, card_width, card_height],
+                'BM3': [607, 34, card_width, card_height],
+                'BM4': [798, 34, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            },
+            'China': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 35, card_width, card_height],
+                'BM2': [418, 35, card_width, card_height],
+                'BM3': [607, 35, card_width, card_height],
+                'BM4': [798, 35, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'W1': [246, 318, card_width, card_height],
+                'W2': [435, 318, card_width, card_height],
+                'W3': [625, 318, card_width, card_height],
+                'W4': [816, 318, card_width, card_height],
+                'W5': [1007, 318, card_width, card_height],
+                'W6': [1197, 318, card_width, card_height]
+            },
+            'Egypt': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 35, card_width, card_height],
+                'BM2': [418, 35, card_width, card_height],
+                'BM3': [607, 35, card_width, card_height],
+                'BM4': [798, 35, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            },
+            'Ethiopia': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 34, card_width, card_height],
+                'BM2': [418, 34, card_width, card_height],
+                'BM3': [607, 34, card_width, card_height],
+                'BM4': [798, 34, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            },
+            'Greece': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 34, card_width, card_height],
+                'BM2': [418, 34, card_width, card_height],
+                'BM3': [607, 34, card_width, card_height],
+                'BM4': [798, 34, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            },
+            'India': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 34, card_width, card_height],
+                'BM2': [418, 34, card_width, card_height],
+                'BM3': [607, 34, card_width, card_height],
+                'BM4': [798, 34, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            },
+            'Japan': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 34, card_width, card_height],
+                'BM2': [418, 34, card_width, card_height],
+                'BM3': [607, 34, card_width, card_height],
+                'BM4': [798, 34, card_width, card_height],
+                'BM5': [989, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            },
+            'Korea': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 34, card_width, card_height],
+                'BM2': [418, 34, card_width, card_height],
+                'BM3': [607, 34, card_width, card_height],
+                'BM4': [798, 34, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            },
+            'Mali': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 34, card_width, card_height],
+                'BM2': [418, 34, card_width, card_height],
+                'BM3': [607, 34, card_width, card_height],
+                'BM4': [798, 34, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            },
+            'Mongolia': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 34, card_width, card_height],
+                'BM2': [418, 34, card_width, card_height],
+                'BM3': [607, 34, card_width, card_height],
+                'BM4': [798, 34, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            },
+            'Persia': {
+                'A1': [20, 34, card_width, card_height],
+                'C3': [210, 35, card_width, card_height],
+                'BM1': [418, 34, card_width, card_height],
+                'BM2': [607, 34, card_width, card_height],
+                'BM3': [798, 34, card_width, card_height],
+                'BM4': [989, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            },
+            'Poland': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 34, card_width, card_height],
+                'BM2': [418, 34, card_width, card_height],
+                'BM3': [607, 34, card_width, card_height],
+                'BM4': [798, 34, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'W1': [246, 318, card_width, card_height],
+                'W2': [435, 318, card_width, card_height],
+                'W3': [625, 318, card_width, card_height],
+                'W4': [816, 318, card_width, card_height],
+                'W5': [1007, 318, card_width, card_height],
+                'W6': [1197, 318, card_width, card_height]
+            },
+            'Portugal': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 34, card_width, card_height],
+                'BM2': [418, 34, card_width, card_height],
+                'BM3': [607, 34, card_width, card_height],
+                'BM4': [798, 34, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            },
+            'Rome': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 34, card_width, card_height],
+                'BM2': [418, 34, card_width, card_height],
+                'BM3': [607, 34, card_width, card_height],
+                'BM4': [798, 34, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            },
+            'Venice': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 34, card_width, card_height],
+                'BM2': [418, 34, card_width, card_height],
+                'BM3': [607, 34, card_width, card_height],
+                'BM4': [798, 34, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            },
+            'Vikings': {
+                'A1': [20, 34, card_width, card_height],
+                'BM1': [228, 34, card_width, card_height],
+                'BM2': [418, 34, card_width, card_height],
+                'BM3': [607, 34, card_width, card_height],
+                'BM4': [798, 34, card_width, card_height],
+                'S1': [1005, 34, card_width, card_height],
+                'Hire': [1198, 33, card_width, card_height],
+                'C1': [20, 317, card_width, card_height],
+                'C2': [210, 317, card_width, card_height],
+                'W1': [435, 318, card_width, card_height],
+                'W2': [625, 318, card_width, card_height],
+                'W3': [816, 318, card_width, card_height],
+                'W4': [1007, 318, card_width, card_height],
+                'W5': [1197, 318, card_width, card_height]
+            }
+        };
+        const worker_boxes = {
+            'America': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            },
+            'Arabs': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            },
+            'China': {
+                '-3 [Food]': [71, 623, 208, 65],
+                '-3 [Stability]': [309, 623, 278, 65],
+                'extra': [263, 577, 63, 65]
+            },
+            'Egypt': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            },
+            'Ethiopia': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            },
+            'Greece': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            },
+            'India': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            },
+            'Japan': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            },
+            'Korea': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            },
+            'Mali': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            },
+            'Mongolia': {
+                '-3 [Food]': [36, 623, 208, 65],
+                '-3 [Military]': [273, 623, 348, 65],
+                'extra': [228, 577, 63, 65]
+            },
+            'Persia': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            },
+            'Poland': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            },
+            'Portugal': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            },
+            'Rome': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            },
+            'Venice': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            },
+            'Vikings': {
+                '-3 [Food]': [33, 623, 278, 65],
+                '-3 [Stability]': [339, 623, 278, 65],
+                'extra': [294, 577, 63, 65]
+            }
+        };
+        const nation_prefixes = {
+            'America': 'Am',
+            'Arabs': 'Ar',
+            'China': 'C',
+            'Egypt': 'Eg',
+            'Ethiopia': 'Et',
+            'Greece': 'G',
+            'India': 'I',
+            'Japan': 'J',
+            'Korea': 'K',
+            'Mali': 'Ml',
+            'Mongolia': 'Mg',
+            'Persia': 'Ps',
+            'Poland': 'Pl',
+            'Portugal': 'Pg',
+            'Rome': 'R',
+            'Venice': 'Vn',
+            'Vikings': 'Vk'
+        };
+        const dynasty_cards = [
+            'Am_DR',
+            'Am_FP',
+            'Ar_AC',
+            'Ar_UC',
+            'C_MD',
+            'C_QD',
+            'Eg_OK',
+            'Eg_NK',
+            'Et_AK',
+            'Et_Sb',
+            'G_At',
+            'G_St',
+            'I_My',
+            'I_Mg',
+            'J_EP',
+            'J_HP',
+            'K_JK',
+            'K_KK',
+            'K_S_Nerf',
+            'Ml_ME',
+            'Ml_SE',
+            'Mg_GH',
+            'Mg_YD',
+            'Ps_AE',
+            'Ps_SE',
+            'Pl_JD',
+            'Pl_PLC',
+            'Pg_KL',
+            'Pg_PE',
+            'R_RE',
+            'R_RR',
+            'Vn_DS',
+            'Vn_PW',
+            'Vk_Nm',
+            'Vk_Vr'
+        ];
+        var message_boxes = {
+            'player': {
+                'box': [0, 0, 966, 60],
+                'border': false,
+                'margin': 20,
+                'color': '#808080',
+                'text_color': '#000000',
+                'font_size': 42,
+                'text': '',
+                'enabled': true
+            },
+            'invalid': {
+                'box': [966, 0, 965, 60],
+                'border': false,
+                'margin': 20,
+                'color': '#808080',
+                'text_color': '#c00000',
+                'font_size': 42,
+                'text': '',
+                'enabled': true
+            },
+            'choice': {
+                'box': [0, 60, 1930, 60],
+                'border': false,
+                'margin': 20,
+                'color': '#707070',
+                'text_color': '#000000',
+                'font_size': 42,
+                'text': '',
+                'enabled': true
+            },
+            'options': {
+                'box': [0, 120, 1930, 60],
+                'border': false,
+                'margin': 20,
+                'color': '#606060',
+                'text_color': '#000000',
+                'font_size': 42,
+                'text': '',
+                'enabled': true
+            }
+        };
+
+        var selected_join_option = -1;
+
+        function get_select_join(growth) {
+            const chosen_growth = growth;
+            const select_join_option = function () {
+                selected_join_option = chosen_growth;
+                setTimeout(draw_if_loaded, 1);
+            };
+            return select_join_option;
+        }
+
+        function join_or_decline() {
+            if (selected_join_option > 0) {
+                send_message({'join': selected_join_option});
+            } else if (selected_join_option == 0) {
+                send_message({'decline': username});
+            }
+        }
+
+        var card_names = [];
+        var event_card_abbrs = {};
+        for (var abbr in abbrs) {
+            const card = abbrs[abbr];
+            card_names.push(card);
+            if (card.includes(';')) {
+                event_card_abbrs[card] = abbr;
+            }
+        }
+
+        var marked_cards = [];
+
+        var global_effects = [];
+
+        var show_boards = true;
+        var follow_boards = true;
+        var show_player_board = '';
+
+        function toggle_show_boards() {
+            show_boards = !show_boards;
+            update_state();
+        }
+
+        function set_show_all_boards() {
+            show_boards = true;
+            follow_boards = false;
+            show_player_board = '';
+            update_state();
+        }
+
+        function set_follow_boards() {
+            show_boards = true;
+            follow_boards = true;
+            show_player_board = '';
+            update_state();
+        }
+
+        function get_show_board(player) {
+            const player_to_show = player;
+            const show_board_function = function () {
+                show_boards = true;
+                follow_boards = false;
+                show_player_board = player_to_show;
+                update_state();
+            };
+            return show_board_function;
+        }
+
+        function get_click_progress_board(progress_board_location) {
+            const location = progress_board_location;
+            const click_progress_board = function () {
+                if (state === null) {
+                    return;
+                }
+                const player_is_next = state['next_move_player'] == username;
+                const active_player = player_is_next || is_superuser;
+                if (!active_player) {
+                    return;
+                }
+                const options = state['next_move_options'];
+                for (var i = 0; i < options.length; i++) {
+                    const option = options[i];
+                    if (option.endsWith(location)) {
+                        send_message({'move': option});
+                        break;
+                    }
+                }
+            };
+            return click_progress_board;
+        }
+
+        var buttons = {
+            'pass': {
+                'box': [0, 180, 280, 60],
+                'border': true,
+                'margin': 20,
+                'color': '#80b0f0',
+                'text_color': '#000000',
+                'font_size': 48,
+                'text': 'Pass',
+                'move': 'Pass',
+                'function': null,
+                'enabled': false
+            },
+            'undo': {
+                'box': [280, 180, 280, 60],
+                'border': true,
+                'margin': 20,
+                'color': '#f09090',
+                'text_color': '#000000',
+                'font_size': 48,
+                'text': 'Undo',
+                'move': 'UNDO',
+                'function': null,
+                'enabled': false
+            },
+            'confirm': {
+                'box': [1650, 180, 280, 60],
+                'border': true,
+                'margin': 20,
+                'color': '#90f090',
+                'text_color': '#000000',
+                'font_size': 48,
+                'text': 'Confirm',
+                'move': 'Confirm',
+                'function': null,
+                'enabled': false
+            }
+        };
+        var option_buttons = null;
+        var hitboxes = null;
+        var moving_enabled = true;
+        const player_board_size = [1381, 732];
+        const deployed_box = [51, 110, 63, 65];
+        const private_box = {
+            'Eg_S': [62, 168, 40, 46],
+            'Acm': [101, 121, 40, 46],
+            'Ahb': [93, 168, 40, 46],
+            'MrCr': [103, 71, 40, 46]
+        };
+        const markers_box = [51, 80, 57, 63];
+        const resources_box = [59, 61, 60, 60];
+        const resource_images = {
+            'Food': 'Food',
+            'Stone': 'Stone',
+            'Gold': 'Gold',
+            'Book': 'Book',
+            'Books': 'Book',
+            'Stability': 'Stability',
+            'Military': 'Military',
+            'Point': 'Point',
+            'Points': 'Point'
+        };
+        var player_to_color = null;
+
+        var downloading_images = false;
+
+        var match_socket = null;
+        var match_socket_connecting = false;
+        var match_socket_open = false;
+        var reopen_timer = null;
+        var reopen_timeout = 500;
+        var refresh_timer = null;
+        var refresh_timeout = 500;
+        var refresh_pending = false;
+        var refresh_pending_time = null;
+
+        if (!sessionStorage.getItem('page_title')) {
+            sessionStorage.setItem('page_title', 'Nations');
+        }
+
+        function set_page_title(event) {
+            document.title = sessionStorage.getItem('page_title');
+        }
+
+        var data = null;
+        var players_data = null;
+        var has_accepted = false;
+        var state = null;
+        var drawn_once = false;
+        var match_log_data = null;
+
+        const date_format_options = {'year': 'numeric', 'month': 'numeric', 'day': 'numeric', 'hour': 'numeric', 'minute': 'numeric', 'second': 'numeric', 'hour12': false};
+        const date_formatter = new Intl.DateTimeFormat('en-US', date_format_options);
+
+        function format_date(date) {
+            const parts = date_formatter.formatToParts(date);
+            var year = 0;
+            var month = 0;
+            var day = 0;
+            var hour = 0;
+            var minute = 0;
+            var second = 0;
+            for (var i = 0; i < parts.length; i++) {
+                const part = parts[i];
+                if (part['type'] == 'year') {
+                    year = part['value'];
+                } else if (part['type'] == 'month') {
+                    month = part['value'];
+                } else if (part['type'] == 'day') {
+                    day = part['value'];
+                } else if (part['type'] == 'hour') {
+                    hour = part['value'];
+                } else if (part['type'] == 'minute') {
+                    minute = part['value'];
+                } else if (part['type'] == 'second') {
+                    second = part['value'];
+                }
+            }
+            return year + '-' + month + '-' + day + ' ' + hour + ':' + minute;
+        }
+
+        function escaped(message) {
+            return message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+        }
+
+        function add_chat_line(line) {
+            var chat_log = document.getElementById('chat-log');
+            const timestamp = format_date(new Date(line['timestamp']));
+            const player = line['player'];
+            const message = line['message'];
+            if (chat_log.innerHTML) {
+                chat_log.innerHTML = chat_log.innerHTML + '<br>';
+            }
+            chat_log.innerHTML = chat_log.innerHTML + '<span class="fw-light">[' + timestamp + ']</span> <span class="fw-bold">' + player + ':</span> ' + escaped(message);
+        }
+
+        function reopen_match_socket_if_necessary_inner(request_update) {
+            clear_reopen_timer();
+            if (!match_socket || !(match_socket_open || match_socket_connecting)) {
+                if (match_socket) {
+                    match_socket.addEventListener('close', (event) => {});
+                    match_socket.close();
+                    match_socket = null;
+                }
+                match_socket = new WebSocket(websocket_prefix + window.location.host + '/ws/nations/' + match_id + '/');
+                match_socket_open = false;
+                match_socket_connecting = true;
+                match_socket.addEventListener('message', (event) =>
+                    {
+                        refresh_timeout = 500;
+                        clear_refresh_timer();
+                        refresh_pending = false;
+                        refresh_pending_time = null;
+                        data = JSON.parse(event.data);
+                        if (data && data['players']) {
+                            players_data = data['players'];
+                            const player_order = data && data['state'] && data['state']['player_order'] ? data['state']['player_order'] : players_data;
+                            const growth_data = data['growth_resources'];
+                            const accepted_players = data['accepted'];
+                            const current_player = data && data['state'] && data['state']['next_move_player'] ? data['state']['next_move_player'] : '';
+                            has_accepted = accepted_players.includes(username);
+                            var player_names = document.getElementById('player-names');
+                            var player_html_parts = [...player_order];
+                            for (var i = 0; i < player_html_parts.length; i++) {
+                                const player_name = player_html_parts[i];
+                                const highlighted_player_name = player_name == current_player ? '<span class="text-primary">' + player_name + '</span>' : player_name;
+                                if (!accepted_players.includes(player_name)) {
+                                    player_html_parts[i] = '<span class="text-secondary">' + highlighted_player_name + ' (invited)</span>';
+                                } else if (growth_resources < 0) {
+                                    const growth = growth_data[player_name];
+                                    const growth_text = ['Emperor', 'King', 'Prince', 'Chieftain'][growth-1];
+                                    player_html_parts[i] = highlighted_player_name + ' (' + growth_text + ')';
+                                } else {
+                                    player_html_parts[i] = highlighted_player_name;
+                                }
+                            }
+                            player_names.innerHTML = 'Players: <span class="fw-bold">' + player_html_parts.join(', ') + '</span>';
+                        }
+                        if (data && data['state']) {
+                            moving_enabled = true;
+                            state = data['state'];
+                            match_log_data = data['log'];
+                            update_state();
+                        } else if (data && data['chat_log']) {
+                            var chat_log = document.getElementById('chat-log');
+                            chat_log.innerHTML = '';
+                            for (var i = 0; i < data['chat_log'].length; i++) {
+                                add_chat_line(data['chat_log'][i]);
+                            }
+                            chat_log.scrollTop = chat_log.scrollHeight;
+                        } else if (data && data['chat']) {
+                            var chat_log = document.getElementById('chat-log');
+                            add_chat_line(data['chat']);
+                            chat_log.scrollTop = chat_log.scrollHeight;
+                        } else if (data && data['players']) {
+                            players_data = data['players'];
+                            draw_if_loaded();
+                        {% if user.is_authenticated %}
+                        } else if (data && Object.hasOwn(data, 'turns')) {
+                            const turns = data['turns'];
+                            var my_matches_link = document.getElementById('my_matches_link');
+                            my_matches_link.innerHTML = '(' + turns + ') Matches';
+                            var page_title;
+                            if (turns) {
+                                page_title = '(' + turns + ') Nations';
+                            } else {
+                                page_title = 'Nations';
+                            }
+                            sessionStorage.setItem('page_title', page_title);
+                            set_page_title(null);
+                        {% endif %}
+                        }
+                    }
+                );
+                match_socket.addEventListener('open', (event) =>
+                    {
+                        reopen_timeout = 500;
+                        clear_reopen_timer();
+                        match_socket.send(JSON.stringify(null));
+                        set_refresh_timer();
+                        refresh_pending = true;
+                        refresh_pending_time = null;
+                        refresh_pending_time = new Date();
+                        match_socket_connecting = false;
+                        match_socket_open = true;
+                    }
+                );
+                match_socket.addEventListener('close', (event) =>
+                    {
+                        set_reopen_timer();
+                        match_socket_connecting = false;
+                        match_socket_open = false;
+                    }
+                );
+                match_socket.addEventListener('error', (event) =>
+                    {
+                        match_socket_connecting = false;
+                        match_socket_open = false;
+                        reopen_timeout *= 2;
+                        set_reopen_timer();
+                    }
+                );
+                if (hitboxes === null && state !== null) {
+                    update_state();
+                }
+            } else if (request_update && match_socket && match_socket_open && !match_socket_connecting) {
+                var request_refresh = true;
+                if (refresh_pending) {
+                    const current_time = new Date();
+                    if (current_time - refresh_pending_time < refresh_timeout) {
+                        request_refresh = false;
+                    }
+                }
+                if (request_refresh) {
+                    if (match_socket && match_socket.readyState == WebSocket.OPEN) {
+                        match_socket.send(JSON.stringify(null));
+                    }
+                    set_refresh_timer();
+                    refresh_pending = true;
+                    refresh_pending_time = null;
+                    refresh_pending_time = new Date();
+                }
+            }
+        }
+
+        function reopen_match_socket_if_necessary(event) {
+            reopen_match_socket_if_necessary_inner(true);
+        }
+
+        function reopen_match_socket_if_necessary_without_requesting_update() {
+            reopen_match_socket_if_necessary_inner(false);
+        }
+
+        function reset_match_socket(event) {
+            clear_refresh_timer();
+            if (match_socket && match_socket.readyState != WebSocket.CLOSED) {
+                match_socket.addEventListener('close', (event) => {});
+                match_socket.close();
+            }
+            match_socket = null;
+            refresh_timeout *= 2;
+            reopen_match_socket_if_necessary(null);
+        }
+
+        function set_reopen_timer() {
+            if (reopen_timer) {
+                return;
+            }
+            if (reopen_timeout < 100000) {
+                reopen_timer = setTimeout(reopen_match_socket_if_necessary, reopen_timeout);
+            }
+        }
+
+        function clear_reopen_timer() {
+            if (reopen_timer) {
+                clearTimeout(reopen_timer);
+                reopen_timer = null;
+            }
+        }
+
+        function set_refresh_timer() {
+            if (refresh_timer) {
+                return;
+            }
+            if (refresh_timeout < 100000) {
+                refresh_timer = setTimeout(reset_match_socket, refresh_timeout);
+            }
+        }
+
+        function clear_refresh_timer() {
+            if (refresh_timer) {
+                clearTimeout(refresh_timer);
+                refresh_timer = null;
+            }
+        }
+
+        document.addEventListener('visibilitychange', (event) =>
+            {
+                if (!document.hidden) {
+                    reopen_match_socket_if_necessary(event);
+                }
+            }
+        );
+
+        reopen_match_socket_if_necessary(null);
+
+        window.addEventListener('focus', reopen_match_socket_if_necessary);
+        window.addEventListener('resume', reopen_match_socket_if_necessary);
+        window.addEventListener('online', reopen_match_socket_if_necessary);
+        window.addEventListener('load', set_page_title);
+
+        function send_message(move) {
+            if (!moving_enabled && 'move' in move) {
+                return;
+            }
+            reopen_match_socket_if_necessary_without_requesting_update();
+            if (match_socket && match_socket.readyState == WebSocket.OPEN) {
+                match_socket.send(JSON.stringify(move));
+                if ('move' in move) {
+                    moving_enabled = false;
+                }
+            }
+            set_refresh_timer();
+            refresh_pending = true;
+            refresh_pending_time = null;
+            refresh_pending_time = new Date();
+        }
+
+        function send_chat() {
+            var chat_input = document.getElementById('chat-input');
+            if (chat_input.value) {
+                send_message({'chat': chat_input.value});
+            }
+            chat_input.value = '';
+        }
+
+        document.getElementById('chat-input').addEventListener('keyup', (event) =>
+            {
+                if (event.keyCode == 13) {
+                    send_chat();
+                }
+            }
+        );
+
+        document.body.style = 'background-color: ' + background_color + ';';
+        var content_div = document.getElementById('content');
+        content_div.style.paddingLeft = '0px';
+        content_div.style.paddingRight = '0px';
+        content_div.style.marginLeft = '0px';
+        content_div.style.marginRight = '0px';
+        content_div.style.width = '100%';
+
+        var canvas_width = player_count < 6 ? 1930 : 2110;
+        var canvas_height = 60;
+        var scale = 0.6;
+        function set_scale(new_scale) {
+            custom_scale = document.getElementById('custom-scale');
+            custom_scale.value = '';
+            scale = new_scale;
+            custom_scale.placeholder = scale * 100;
+            update_cookie();
+            draw_if_loaded();
+        }
+        function set_custom_scale() {
+            custom_scale = parseFloat(document.getElementById('custom-scale').value);
+            if (!isNaN(custom_scale) && custom_scale >= 1.0 && custom_scale <= 100.0) {
+                set_scale(custom_scale / 100.0);
+            }
+        }
+        document.getElementById('button-scale-50').addEventListener('click', (event) =>
+            {
+                set_scale(0.50);
+            }
+        );
+        document.getElementById('button-scale-60').addEventListener('click', (event) =>
+            {
+                set_scale(0.60);
+            }
+        );
+        document.getElementById('button-scale-75').addEventListener('click', (event) =>
+            {
+                set_scale(0.75);
+            }
+        );
+        document.getElementById('button-scale-100').addEventListener('click', (event) =>
+            {
+                set_scale(1.0);
+            }
+        );
+        document.getElementById('button-scale-custom').addEventListener('click', (event) =>
+            {
+                set_custom_scale();
+            }
+        );
+        document.getElementById('custom-scale').addEventListener('keyup', (event) =>
+            {
+                if (event.keyCode == 13) {
+                    set_custom_scale();
+                }
+            }
+        );
+        document.getElementById('save-cookie').addEventListener('click', (event) =>
+            {
+                if (document.getElementById('save-cookie').checked) {
+                    update_cookie();
+                } else {
+                    delete_cookie();
+                }
+            }
+        );
+
+        function check_cookie() {
+            const cookies = document.cookie.split(';');
+            for (var i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i];
+                if (!cookie.includes('=')) {
+                    continue;
+                }
+                const cookie_name_value = cookie.split('=');
+                const cookie_name = cookie_name_value[0].trim();
+                const cookie_value = cookie_name_value[1].trim();
+                if (cookie_name == 'scale') {
+                    document.getElementById('save-cookie').checked = true;
+                    custom_scale_input = document.getElementById('custom-scale');
+                    scale = cookie_value;
+                    if (scale == 'null') {
+                        scale = 0.6;
+                    }
+                    custom_scale_input.placeholder = scale * 100;
+                }
+            }
+        }
+        check_cookie();
+
+        function update_cookie() {
+            if (document.getElementById('save-cookie').checked) {
+                var expiration_time = new Date();
+                expiration_time.setTime(expiration_time.getTime() + 365 * 24 * 60 * 60 * 1000);
+                document.cookie = 'scale=' + scale + ';expires=' + expiration_time.toUTCString() + ';path=/';
+            }
+        }
+
+        function delete_cookie() {
+            if (!document.getElementById('save-cookie').checked) {
+                var expiration_time = new Date();
+                expiration_time.setTime(expiration_time.getTime() - 60 * 1000);
+                document.cookie = 'scale=;expires=' + expiration_time.toUTCString() + ';path=/';
+            }
+        }
+
+        function scroll_logs_to_bottom() {
+            var match_log = document.getElementById('match-log');
+            var chat_log = document.getElementById('chat-log');
+            match_log.scrollTop = match_log.scrollHeight;
+            chat_log.scrollTop = chat_log.scrollHeight;
+        }
+
+        var logs_position_state = 'unset';
+        function position_logs() {
+            var game_div = document.getElementById('game-div');
+            var game_canvas = document.getElementById('game');
+            var match_log_div = document.getElementById('match-log-div');
+            var chat_log_div = document.getElementById('chat-log-div');
+            var vertical_logs = document.getElementById('vertical-logs');
+            var horizontal_logs = document.getElementById('horizontal-logs');
+            var log_col_left = document.getElementById('log-col-left');
+            var log_col_right = document.getElementById('log-col-right');
+            var game_row = document.getElementById('game-row');
+            var side_logs = document.getElementById('side-logs');
+            var view_width = document.documentElement.clientWidth;
+            var right_side_width = view_width - game_canvas.width;
+            game_div.style.width = game_canvas.width + 'px';
+            game_div.style['max-width'] = game_div.style.width;
+            if (right_side_width >= 550) {
+                game_row.style['min-width'] = (game_canvas.width + right_side_width) + 'px';
+                side_logs.style['max-width'] = right_side_width + 'px';
+                if (logs_position_state != 'large') {
+                    side_logs.appendChild(chat_log_div);
+                    side_logs.appendChild(match_log_div);
+                    logs_position_state = 'large';
+                }
+            } else if (view_width >= 1100) {
+                game_row.style['min-width'] = game_canvas.width + 'px';
+                side_logs.style['max-width'] = '0px';
+                if (logs_position_state != 'medium') {
+                    log_col_left.appendChild(match_log_div);
+                    log_col_right.appendChild(chat_log_div);
+                    horizontal_logs.style['min-width'] = '1100px';
+                    log_col_left.style['min-width'] = '550px';
+                    log_col_right.style['min-width'] = '550px';
+                    log_col_left.style['max-width'] = '700px';
+                    log_col_right.style['max-width'] = '700px';
+                    logs_position_state = 'medium';
+                }
+            } else {
+                game_row.style['min-width'] = game_canvas.width + 'px';
+                side_logs.style['max-width'] = '0px';
+                if (logs_position_state != 'small') {
+                    vertical_logs.appendChild(chat_log_div);
+                    vertical_logs.appendChild(match_log_div);
+                    horizontal_logs.style['min-width'] = '0px';
+                    log_col_left.style['min-width'] = '0px';
+                    log_col_right.style['min-width'] = '0px';
+                    log_col_left.style['max-width'] = '0px';
+                    log_col_right.style['max-width'] = '0px';
+                    logs_position_state = 'small';
+                }
+            }
+            scroll_logs_to_bottom();
+        }
+
+        window.addEventListener('resize', (event) =>
+            {
+                position_logs();
+            }
+        );
+
+        function start_loading_images() {
+            downloading_images = true;
+            for (var image_name in images) {
+                image_info = images[image_name];
+                if (!image_info['image']) {
+                    image = new Image();
+                    image_info['image'] = image;
+                    image.image_loaded = false;
+                    image.image_load_failure = false;
+                    image.image_load_timeout = 100;
+                    image.addEventListener('load', (event) =>
+                        {
+                            event.target.image_loaded = true;
+                            draw_if_loaded();
+                        }
+                    );
+                    image.addEventListener('error', (event) =>
+                        {
+                            event.target.image_load_timeout *= 10;
+                            const this_image = event.target;
+                            const timeout = this_image.image_load_timeout;
+                            if (timeout > 100000) {
+                                this_image.image_load_failure = true;
+                                draw_if_loaded();
+                            } else {
+                                const retry_loading_image = function () {
+                                    this_image.src = this_image.src;
+                                };
+                                setTimeout(retry_loading_image, timeout);
+                            }
+                        }
+                    );
+                    image.setAttribute('src', image_info['src']);
+                }
+            }
+        }
+        start_loading_images();
+
+        function update_height(game_canvas, bottom) {
+            if (bottom > canvas_height) {
+                var draw = game_canvas.draw_canvas.getContext('2d');
+                const saved_font = draw.font;
+                const saved_lineWidth = draw.lineWidth;
+                const saved_fillStyle = draw.fillStyle;
+                const saved_strokeStyle = draw.strokeStyle;
+                const saved_textBaseline = draw.textBaseline;
+                const saved_textAlign = draw.textAlign;
+                game_canvas.save_canvas = document.createElement('canvas');
+                game_canvas.save_canvas.width = canvas_width;
+                game_canvas.save_canvas.height = canvas_height;
+                game_canvas.save_canvas.getContext('2d').drawImage(game_canvas.draw_canvas, 0, 0);
+                canvas_height = bottom;
+                game_canvas.draw_canvas.height = canvas_height;
+                draw = game_canvas.draw_canvas.getContext('2d');
+                draw.fillStyle = background_color;
+                draw.fillRect(0, 0, canvas_width, canvas_height);
+                draw.drawImage(game_canvas.save_canvas, 0, 0);
+                draw.font = saved_font;
+                draw.lineWidth = saved_lineWidth;
+                draw.fillStyle = saved_fillStyle;
+                draw.strokeStyle = saved_strokeStyle;
+                draw.textBaseline = saved_textBaseline;
+                draw.textAlign = saved_textAlign;
+                game_canvas.save_canvas = null;
+            }
+        }
+
+        function draw_image_and_update_height(game_canvas, image_name, x, y) {
+            const image = images[image_name]['image'];
+            update_height(game_canvas, y + image.height);
+            var draw = game_canvas.draw_canvas.getContext('2d');
+            draw.drawImage(image, x, y);
+        }
+
+        function fill_rect_and_update_height(game_canvas, box) {
+            update_height(game_canvas, box[1] + box[3]);
+            var draw = game_canvas.draw_canvas.getContext('2d');
+            draw.fillRect(...box);
+        }
+
+        function bordered_fill_rect_and_update_height(game_canvas, box) {
+            update_height(game_canvas, box[1] + box[3]);
+            var draw = game_canvas.draw_canvas.getContext('2d');
+            const saved_fillStyle = draw.fillStyle;
+            draw.fillStyle = '#000000';
+            draw.fillRect(...box);
+            draw.fillStyle = saved_fillStyle;
+            draw.fillRect(box[0] + 1, box[1] + 1, box[2] - 2, box[3] - 2);
+        }
+
+        function stroke_rect_and_update_height(game_canvas, box) {
+            var draw = game_canvas.draw_canvas.getContext('2d');
+            update_height(game_canvas, box[1] + box[3] + Math.ceil(draw.lineWidth / 2));
+            draw = game_canvas.draw_canvas.getContext('2d');
+            draw.strokeRect(...box);
+        }
+
+        function draw_text_no_height_update(game_canvas, text, x, y) {
+            const draw = game_canvas.draw_canvas.getContext('2d');
+            draw.lineJoin = 'round';
+            draw.miterLimit = 2;
+            draw.strokeText(text, x, y);
+            draw.fillText(text, x, y);
+        }
+
+        function draw_state() {
+            const players = state['player_order'];
+            const phase = state['phase'];
+            canvas_height = phase == 'Drafting Phase' ? 15000 : 3000;
+            if (show_boards && !show_player_board) {
+                canvas_height += (player_board_size[1] + 50) * (players.length - 1);
+            }
+            var game_canvas = document.getElementById('game');
+            game_canvas.draw_canvas = document.createElement('canvas');
+            game_canvas.draw_canvas.width = canvas_width;
+            game_canvas.draw_canvas.height = canvas_height;
+            var draw = game_canvas.draw_canvas.getContext('2d');
+            function draw_image(image_name, x, y) {
+                draw_image_and_update_height(game_canvas, image_name, x, y);
+                draw = game_canvas.draw_canvas.getContext('2d');
+            }
+            function fill_rect(box) {
+                fill_rect_and_update_height(game_canvas, box);
+                draw = game_canvas.draw_canvas.getContext('2d');
+            }
+            function bordered_fill_rect(box) {
+                bordered_fill_rect_and_update_height(game_canvas, box);
+                draw = game_canvas.draw_canvas.getContext('2d');
+            }
+            function stroke_rect(box) {
+                stroke_rect_and_update_height(game_canvas, box);
+                draw = game_canvas.draw_canvas.getContext('2d');
+            }
+            function highlight_action(box) {
+                const saved_lineWidth = draw.lineWidth;
+                const saved_strokeStyle = draw.strokeStyle;
+                const highlight_box = [box[0] - 1, box[1] - 1, box[2] + 2, box[3] + 2];
+                draw.lineWidth = 3;
+                draw.strokeStyle = '#4040ff';
+                draw.setLineDash([8, 5]);
+                stroke_rect_and_update_height(game_canvas, highlight_box);
+                draw.lineWidth = saved_lineWidth;
+                draw.strokeStyle = saved_strokeStyle;
+                draw.setLineDash([]);
+                draw = game_canvas.draw_canvas.getContext('2d');
+            }
+            function draw_text(text, x, y) {
+                draw_text_no_height_update(game_canvas, text, x, y);
+            }
+            function draw_board_tabs(box, showing, toggle_function) {
+                function fill_tab(box) {
+                    const saved_fillStyle = draw.fillStyle;
+                    draw.fillStyle = '#000000';
+                    fill_rect(box);
+                    draw.fillStyle = saved_fillStyle;
+                    fill_rect([box[0] + 3, box[1] + 3, box[2] - 6, box[3] - 3]);
+                }
+                draw.fillStyle = '#404040';
+                bordered_fill_rect(box);
+                draw.fillStyle = '#ffffff';
+                fill_rect([box[0] + 5, box[1] + 18, 22, 4]);
+                if (!showing) {
+                    fill_rect([box[0] + 14, box[1] + 9, 4, 22]);
+                }
+                hitboxes.push({
+                    'box': box,
+                    'move': null,
+                    'function': toggle_function,
+                    'enabled': true
+                });
+                const all_boards_box = [box[0] + 50, box[1], 200, box[3]];
+                draw.fillStyle = '#ffffff';
+                fill_tab(all_boards_box);
+                var bold = show_player_board ? '' : 'bold ';
+                draw.font = bold + '24px sans-serif';
+                draw.fillStyle = '#000000';
+                draw.textBaseline = 'middle';
+                draw.textAlign = 'left';
+                draw.fillText('All Boards', all_boards_box[0] + 12, all_boards_box[1] + 21);
+                hitboxes.push({
+                    'box': all_boards_box,
+                    'move': null,
+                    'function': set_show_all_boards,
+                    'enabled': true
+                });
+                var horizontal_tab_offset = all_boards_box[0] + all_boards_box[2];
+                const follow_box = [horizontal_tab_offset, box[1], 200, box[3]];
+                draw.fillStyle = '#000000';
+                fill_tab(follow_box);
+                bold = follow_boards ? 'bold ' : '';
+                draw.font = bold + '24px sans-serif';
+                draw.fillStyle = '#ffffff';
+                draw.textBaseline = 'middle';
+                draw.textAlign = 'left';
+                if (follow_boards) {
+                    draw.fillText('Following', follow_box[0] + 12, follow_box[1] + 21);
+                } else {
+                    draw.fillText('Follow', follow_box[0] + 12, follow_box[1] + 21);
+                }
+                hitboxes.push({
+                    'box': follow_box,
+                    'move': null,
+                    'function': set_follow_boards,
+                    'enabled': true
+                });
+                var horizontal_tab_offset = follow_box[0] + follow_box[2];
+                for (var i = 0; i < players.length; i++) {
+                    const player = players[i];
+                    const player_info = state['players'][player];
+                    const passed = player_info['passed'];
+                    const player_color = player_to_color[player];
+                    const player_color_code = player_color_codes[player_color];
+                    const player_text_color_code = player_text_color_codes[player_color];
+                    const player_tab_box = [horizontal_tab_offset, box[1], 200, box[3]];
+                    const symbol_width = player_symbols ? 28 : 0;
+                    const player_name_width = player_tab_box[2] - 20 - symbol_width;
+                    draw.fillStyle = player_color_code;
+                    fill_tab(player_tab_box);
+                    if (player_symbols) {
+                        draw_image('Symbol' + player_color, player_tab_box[0] + 6, player_tab_box[1] + 16);
+                    }
+                    bold = show_player_board == player ? 'bold ' : '';
+                    var font_size = 24;
+                    while (font_size > 8) {
+                        draw.font = bold + font_size + 'px sans-serif';
+                        const text_measurements = draw.measureText(player);
+                        if (text_measurements.width <= player_name_width) {
+                            break;
+                        }
+                        font_size--;
+                    }
+                    draw.font = bold + font_size + 'px sans-serif';
+                    draw.fillStyle = passed ? '#808080' : player_text_color_code;
+                    draw.textBaseline = 'middle';
+                    draw.textAlign = 'left';
+                    draw.fillText(player, player_tab_box[0] + 12 + symbol_width, player_tab_box[1] + 21);
+                    hitboxes.push({
+                        'box': player_tab_box,
+                        'move': null,
+                        'function': get_show_board(player),
+                        'enabled': true
+                    });
+                    horizontal_tab_offset += player_tab_box[2] - 3;
+                }
+            }
+            function draw_player_nation(player, player_board_box) {
+                const player_color = player_to_color[player];
+                const player_color_code = player_color_codes[player_color];
+                const current_player = state['next_move_player'];
+                const player_is_next = current_player == username;
+                const active_player = player_is_next || is_superuser;
+                const enable_hitboxes = active_player && player == current_player;
+                const options = state['next_move_options'];
+                const player_info = state['players'][player];
+                const nation = player_info['nation'];
+                const slots = player_info['slots'];
+                const dynasties = player_info['dynasties'];
+                const resources = player_info['resources'];
+                const production = player_info['production'];
+                const worker_pools = player_info['worker_pools'];
+                const extra_workers = player_info['extra_workers'];
+                const workers = player_info['workers'];
+                const grown_workers = player_info['grown_workers'];
+                const turmoil = player_info['turmoil'];
+                const stability = resources ? (resources['[Stability]'] ? resources['[Stability]'] : 0) : 0;
+                const effective_stability = stability > 15 ? 15 : stability;
+                const military = resources ? (resources['[Military]'] ? resources['[Military]'] : 0) : 0;
+                const effective_military = military > 40 ? 40 : military;
+                const food = resources ? (resources['[Food]'] ? resources['[Food]'] : 0) : 0;
+                const stone = resources ? (resources['[Stone]'] ? resources['[Stone]'] : 0) : 0;
+                const gold = resources ? (resources['[Gold]'] ? resources['[Gold]'] : 0) : 0;
+                const books = resources ? (resources['[Books]'] ? resources['[Books]'] : 0) : 0;
+                const food_production = production ? (production['[Food]'] ? production['[Food]'] : 0) : 0;
+                const stone_production = production ? (production['[Stone]'] ? production['[Stone]'] : 0) : 0;
+                const gold_production = production ? (production['[Gold]'] ? production['[Gold]'] : 0) : 0;
+                const book_production = production ? (production['[Books]'] ? production['[Books]'] : 0) : 0;
+                const points = player_info['points'];
+                const most_stability = player_info['most_stability'];
+                const least_stability = player_info['least_stability'];
+                const most_military = player_info['most_military'];
+                const least_military = player_info['least_military'];
+                const score = player_info['score'];
+                const nation_prefix_regex = new RegExp('^' + nation_prefixes[nation] + '_');
+                draw.font = '24px sans-serif';
+                draw.lineWidth = 7;
+                draw.fillStyle = '#ffffff';
+                draw.strokeStyle = '#000000';
+                draw.textBaseline = 'middle';
+                draw.textAlign = 'center';
+                draw_image(nation, player_board_box[0], player_board_box[1]);
+                player_board_boxes = nation_boxes[nation];
+                for (var slot in player_board_boxes) {
+                    const slot_box = player_board_boxes[slot];
+                    const box = [player_board_box[0] + slot_box[0], player_board_box[1] + slot_box[1], slot_box[2], slot_box[3]];
+                    var card = slots[slot];
+                    var slide_up = 0;
+                    while (card && player_info['cards'][card]['covered_by']) {
+                        if (card == 'ZhXi') {
+                            const zhu_xi_box = [box[0], box[1] + 28, box[2], box[3]];
+                            draw_image(card, zhu_xi_box[0], zhu_xi_box[1]);
+                            slide_up = 28;
+                            if (enable_hitboxes && options.includes(abbrs[card])) {
+                                highlight_action(zhu_xi_box);
+                                hitboxes.push({
+                                    'box': zhu_xi_box,
+                                    'move': abbrs[card],
+                                    'function': null,
+                                    'enabled': true
+                                });
+                            } else if (active_player && options.includes('Buy "' + abbrs[card] + '"')) {
+                                highlight_action(zhu_xi_box);
+                                hitboxes.push({
+                                    'box': zhu_xi_box,
+                                    'move': 'Buy "' + abbrs[card] + '"',
+                                    'function': null,
+                                    'enabled': true
+                                });
+                            }
+                        }
+                        card = player_info['cards'][card]['covered_by'];
+                    }
+                    const card_box = [box[0], box[1] - slide_up, box[2], box[3]];
+                    if (card && (!nation_prefix_regex.test(card) || dynasty_cards.includes(card))) {
+                        draw_image(card, card_box[0], card_box[1]);
+                    } else if (!card && slot.startsWith('BM')) {
+                        draw_image('BlankBM', card_box[0] + 3, card_box[1] + 3);
+                    } else if (!card && nation == 'Venice' && slot == 'C2') {
+                        draw_image('BlankColony', card_box[0] + 3, card_box[1] + 3);
+                    }
+                    if (enable_hitboxes && (options.includes(slot) || (card && options.includes(abbrs[card])))) {
+                        const move = (card && options.includes(abbrs[card])) ? abbrs[card] : slot;
+                        highlight_action(card_box);
+                        hitboxes.push({
+                            'box': card_box,
+                            'move': move,
+                            'function': null,
+                            'enabled': true
+                        });
+                    } else if (active_player && options.includes('Buy "' + abbrs[card] + '"')) {
+                        highlight_action(card_box);
+                        hitboxes.push({
+                            'box': card_box,
+                            'move': 'Buy "' + abbrs[card] + '"',
+                            'function': null,
+                            'enabled': true
+                        });
+                    }
+                    if (card) {
+                        const card_info = player_info['cards'][card];
+                        const deployed = card_info['deployed'];
+                        const private = card_info['private'];
+                        const architects = card_info['architects'];
+                        const explored = card_info['explored'];
+                        const markers = card_info['markers'];
+                        const card_resources = card_info['resources'];
+                        const special_option = 'Special of "' + abbrs[card] + '"';
+                        const deploy_option = 'Deploy to ' + slot;
+                        if (enable_hitboxes && options.includes(special_option)) {
+                            highlight_action(card_box);
+                            hitboxes.push({
+                                'box': card_box,
+                                'move': special_option,
+                                'function': null,
+                                'enabled': true
+                            });
+                        }
+                        if (enable_hitboxes && options.includes(deploy_option)) {
+                            const deploy_box = [box[0] + 16, box[1] + 139, 35, 42];
+                            draw_image('Deploy', deploy_box[0], deploy_box[1]);
+                            hitboxes.push({
+                                'box': deploy_box,
+                                'move': deploy_option,
+                                'function': null,
+                                'enabled': true
+                            });
+                        }
+                        if (deployed) {
+                            const undeploy_option = 'Undeploy from ' + slot;
+                            const worker_box = [box[0] + deployed_box[0], box[1] + deployed_box[1], deployed_box[2], deployed_box[3]];
+                            draw_image('Worker' + player_color, worker_box[0], worker_box[1]);
+                            draw_text(deployed, worker_box[0] + 30, worker_box[1] + 33);
+                            if (enable_hitboxes && options.includes(undeploy_option)) {
+                                const undeploy_box = [box[0] + 118, box[1] + 140, 35, 42];
+                                draw_image('Undeploy', undeploy_box[0], undeploy_box[1]);
+                                hitboxes.push({
+                                    'box': undeploy_box,
+                                    'move': undeploy_option,
+                                    'function': null,
+                                    'enabled': true
+                                });
+                            }
+                        }
+                        if (private) {
+                            const private_option = 'Hire from "' + abbrs[card] + '"';
+                            var architects_box = [...private_box[card]];
+                            architects_box[0] += box[0];
+                            architects_box[1] += box[1];
+                            draw_image('ArchitectMedium', architects_box[0], architects_box[1]);
+                            draw_text(private, architects_box[0] + 20, architects_box[1] + 23);
+                            if (enable_hitboxes && options.includes(private_option)) {
+                                highlight_action(card_box);
+                                hitboxes.push({
+                                    'box': card_box,
+                                    'move': private_option,
+                                    'function': null,
+                                    'enabled': true
+                                });
+                            }
+                        }
+                        if (architects) {
+                            const architects_box = [box[0] + 11, box[1] + 139, 32, 37];
+                            for (i = 0; i < architects; i++) {
+                                draw_image('Architect', architects_box[0] + i * 35, architects_box[1]);
+                            }
+                        }
+                        if (explored) {
+                            const exploration_turns = card_info['exploration_turns'];
+                            const explored_box = [box[0] + 11, box[1] + 142, 32, 37];
+                            for (i = 0; i < explored; i++) {
+                                draw_image('Architect', explored_box[0], explored_box[1] - (exploration_turns - (i + 1)) * 35);
+                            }
+                        }
+                        if (markers) {
+                            const marker_box = [box[0] + markers_box[0], box[1] + markers_box[1], markers_box[2], markers_box[3]];
+                            draw_image('MarkerBig', marker_box[0], marker_box[1]);
+                            draw_text(markers, marker_box[0] + 28, marker_box[1] + 30);
+                        }
+                        if (card_resources) {
+                            const card_food = card_resources['[Food]'] ? card_resources['[Food]'] : 0;
+                            const card_stone = card_resources['[Stone]'] ? card_resources['[Stone]'] : 0;
+                            const card_gold = card_resources['[Gold]'] ? card_resources['[Gold]'] : 0;
+                            const card_books = card_resources['[Books]'] ? card_resources['[Books]'] : 0;
+                            const resource_box = [box[0] + resources_box[0], box[1] + resources_box[1], resources_box[2], resources_box[3]];
+                            const image_name = card_food ? 'Food' : card_stone ? 'Stone' : card_gold ? 'Gold' : 'Book';
+                            const amount = card_food ? card_food : card_stone ? card_stone : card_gold ? card_gold : card_books;
+                            draw_image(image_name, resource_box[0], resource_box[1]);
+                            draw_text(amount, resource_box[0] + 22, resource_box[1] + 22);
+                        }
+                    }
+                }
+                for (var worker_cost in worker_pools) {
+                    const num_workers = worker_pools[worker_cost]['workers'];
+                    const num_markers = worker_pools[worker_cost]['markers'];
+                    var worker_pool_box = [...worker_boxes[nation][worker_cost]];
+                    worker_pool_box[0] += player_board_box[0];
+                    worker_pool_box[1] += player_board_box[1];
+                    for (var i = 0; i < num_workers; i++) {
+                        draw_image('Worker' + player_color, worker_pool_box[0] + i * 70, worker_pool_box[1]);
+                    }
+                    for (var i = 1; i <= num_markers; i++) {
+                        draw_image('MarkerBig', worker_pool_box[0] + worker_pool_box[2] - i * 70 + 3, worker_pool_box[1] + 3);
+                    }
+                    const move = worker_cost + ' [Worker]';
+                    if (enable_hitboxes && options.includes(move)) {
+                        highlight_action(worker_pool_box);
+                        hitboxes.push({
+                            'box': worker_pool_box,
+                            'move': move,
+                            'function': null,
+                            'enabled': true
+                        });
+                    }
+                }
+                if (extra_workers) {
+                    var extra_workers_box = [...worker_boxes[nation]['extra']];
+                    extra_workers_box[0] += player_board_box[0];
+                    extra_workers_box[1] += player_board_box[1];
+                    draw_image('Worker' + player_color, extra_workers_box[0], extra_workers_box[1]);
+                    draw_text(extra_workers, extra_workers_box[0] + 30, extra_workers_box[1] + 33);
+                    if (enable_hitboxes && options.includes('[Worker]')) {
+                        highlight_action(extra_workers_box);
+                        hitboxes.push({
+                            'box': extra_workers_box,
+                            'move': '[Worker]',
+                            'function': null,
+                            'enabled': true
+                        });
+                    }
+                }
+                if (turmoil) {
+                    const box = [player_board_box[0] + 700, player_board_box[1] + 606, 62, 96];
+                    draw_image('Turmoil', box[0], box[1]);
+                    draw_text(turmoil, box[0] + 30, box[1] + 48);
+                }
+                if (workers) {
+                    const box = [player_board_box[0] + 800, player_board_box[1] + 623, 63, 65];
+                    draw_image('Worker' + player_color, box[0], box[1]);
+                    draw_text(workers, box[0] + 30, box[1] + 33);
+                }
+                draw.font = 'bold 40px sans-serif';
+                draw.fillStyle = '#000000';
+                draw.fillText(food, player_board_box[0] + 1032, player_board_box[1] + 626);
+                draw.fillText(stone, player_board_box[0] + 1102, player_board_box[1] + 626);
+                draw.fillText(gold, player_board_box[0] + 1176, player_board_box[1] + 626);
+                draw.fillText(points, player_board_box[0] + 1251, player_board_box[1] + 626);
+                draw.fillText(grown_workers, player_board_box[0] + 1327, player_board_box[1] + 626);
+                const horizontal_offset = player_board_box[0] + player_board_box[2] + 13;
+                const player_info_box = [horizontal_offset, player_board_box[1] - 35, 354, player_board_box[3] + 40];
+                draw.fillStyle = player_color_code;
+                bordered_fill_rect(player_info_box);
+                draw.fillStyle = background_color;
+                bordered_fill_rect([player_info_box[0] + 4, player_info_box[1] + 4, player_info_box[2] - 8, 266]);
+                bordered_fill_rect([player_info_box[0] + 4, player_info_box[1] + 272, player_info_box[2] - 8, 140]);
+                bordered_fill_rect([player_info_box[0] + 4, player_info_box[1] + 414, player_info_box[2] - 8, 245]);
+                bordered_fill_rect([player_info_box[0] + 4, player_info_box[1] + 661, player_info_box[2] - 8, 107]);
+                for (var i = 0; i < dynasties.length; i++) {
+                    const dynasty = dynasties[i];
+                    if (dynasty) {
+                        const dynasty_name = abbrs[dynasty];
+                        const dynasty_option = options.includes(dynasty_name) ? dynasty_name : 'Play "' + dynasty_name + '"';
+                        dynasty_box = [player_info_box[0] + 10 + i * 170, player_info_box[1] + 10, card_width, card_height];
+                        draw_image(dynasty, dynasty_box[0], dynasty_box[1]);
+                        if (enable_hitboxes && options.includes(dynasty_option)) {
+                            highlight_action(dynasty_box);
+                            hitboxes.push({
+                                'box': dynasty_box,
+                                'move': dynasty_option,
+                                'function': null,
+                                'enabled': true
+                            });
+                        }
+                    }
+                }
+                draw_image('StabilityBig', player_info_box[0] + 22, player_info_box[1] + 280);
+                draw_image('MilitaryBig', player_info_box[0] + 29, player_info_box[1] + 345);
+                draw_image('FoodBig', player_info_box[0] + 101, player_info_box[1] + 497);
+                draw_image('StoneBig', player_info_box[0] + 100, player_info_box[1] + 586);
+                draw_image('GoldBig', player_info_box[0] + 265, player_info_box[1] + 497);
+                draw_image('BookBig', player_info_box[0] + 266, player_info_box[1] + 586);
+                draw_image('PointBig', player_info_box[0] + 184, player_info_box[1] + 672);
+                draw.font = 'bold 48px sans-serif';
+                draw.fillStyle = '#000000';
+                draw.textAlign = 'left';
+                draw.fillText('Production:', player_info_box[0] + 20, player_info_box[1] + 455);
+                draw.fillText('Score:', player_info_box[0] + 20, player_info_box[1] + 715);
+                draw.font = 'bold 40px sans-serif';
+                const stability_actual_text = stability != effective_stability ? ' (' + stability + ')' : '';
+                const stability_most_text = most_stability ? ' [most]' : '';
+                const stability_least_text = least_stability ? ' [least]' : '';
+                const stability_post_text = stability_actual_text + stability_most_text + stability_least_text;
+                const stability_text = Math.abs(effective_stability) + stability_post_text;
+                const military_actual_text = military != effective_military ? ' (' + military + ')' : '';
+                const military_most_text = most_military ? ' [most]' : '';
+                const military_least_text = least_military ? ' [least]' : '';
+                const military_post_text = military_actual_text + military_most_text + military_least_text;
+                const military_text = Math.abs(effective_military) + military_post_text;
+                const food_text = Math.abs(food_production);
+                const stone_text = Math.abs(stone_production);
+                const gold_text = Math.abs(gold_production);
+                const book_text = Math.abs(book_production);
+                const food_text_width = draw.measureText(food_text).width;
+                const stone_text_width = draw.measureText(stone_text).width;
+                const gold_text_width = draw.measureText(gold_text).width;
+                const book_text_width = draw.measureText(book_text).width;
+                if (stability < 0) {
+                    fill_rect([player_info_box[0] + 109, player_info_box[1] + 305, 24, 6]);
+                }
+                if (military < 0) {
+                    fill_rect([player_info_box[0] + 109, player_info_box[1] + 372, 24, 6]);
+                }
+                if (food_production < 0) {
+                    fill_rect([player_info_box[0] + 65 - food_text_width, player_info_box[1] + 524, 24, 6]);
+                }
+                if (stone_production < 0) {
+                    fill_rect([player_info_box[0] + 65 - stone_text_width, player_info_box[1] + 613, 24, 6]);
+                }
+                if (gold_production < 0) {
+                    fill_rect([player_info_box[0] + 224 - gold_text_width, player_info_box[1] + 524, 24, 6]);
+                }
+                if (book_production < 0) {
+                    fill_rect([player_info_box[0] + 224 - book_text_width, player_info_box[1] + 613, 24, 6]);
+                }
+                draw.fillText(':', player_info_box[0] + 92, player_info_box[1] + 305);
+                draw.fillText(':', player_info_box[0] + 92, player_info_box[1] + 372);
+                var font_size = 40;
+                while (font_size > 8) {
+                    draw.font = 'bold ' + font_size + 'px sans-serif';
+                    const text_measurements = draw.measureText(stability_text);
+                    if (text_measurements.width <= player_info_box[2] - 150) {
+                        break;
+                    }
+                    font_size--;
+                }
+                draw.font = 'bold ' + font_size + 'px sans-serif';
+                draw.fillText(stability_text, player_info_box[0] + 136, player_info_box[1] + 309);
+                font_size = 40;
+                while (font_size > 8) {
+                    draw.font = 'bold ' + font_size + 'px sans-serif';
+                    const text_measurements = draw.measureText(military_text);
+                    if (text_measurements.width <= player_info_box[2] - 150) {
+                        break;
+                    }
+                    font_size--;
+                }
+                draw.font = 'bold ' + font_size + 'px sans-serif';
+                draw.fillText(military_text, player_info_box[0] + 136, player_info_box[1] + 376);
+                draw.font = 'bold 40px sans-serif';
+                draw.fillText(food_text, player_info_box[0] + 94 - food_text_width, player_info_box[1] + 529);
+                draw.fillText(stone_text, player_info_box[0] + 94 - stone_text_width, player_info_box[1] + 618);
+                draw.fillText(gold_text, player_info_box[0] + 253 - gold_text_width, player_info_box[1] + 529);
+                draw.fillText(book_text, player_info_box[0] + 253 - book_text_width, player_info_box[1] + 618);
+                draw.textAlign = 'center';
+                draw.fillText(score, player_info_box[0] + 230, player_info_box[1] + 714);
+            }
+            function draw_player_board(player, player_area_box) {
+                const player_color = player_to_color[player];
+                const player_color_code = player_color_codes[player_color];
+                const player_text_color_code = player_text_color_codes[player_color];
+                const player_info = state['players'][player];
+                const passed = player_info['passed'];
+                const nation = player_info['nation'];
+                const vertical_size = nation ? player_board_size[1] : 40;
+                const player_board_box = [35, player_area_box[1] + 35, player_board_size[0], vertical_size];
+                const symbol_width = player_symbols ? 28 : 0;
+                draw.fillStyle = player_color_code;
+                bordered_fill_rect([player_board_box[0] - 5, player_board_box[1] - 35, player_board_box[2] + 10, player_board_box[3] + 40]);
+                draw.fillStyle = background_color;
+                bordered_fill_rect([player_board_box[0] - 1, player_board_box[1] - 1, player_board_box[2] + 2, player_board_box[3] + 2]);
+                if (player_symbols) {
+                    draw_image('Symbol' + player_color, player_board_box[0] + 4, player_board_box[1] - 22);
+                }
+                draw.font = '26px sans-serif';
+                draw.lineWidth = 2;
+                draw.fillStyle = player_text_color_code;
+                draw.strokeStyle = '#000000';
+                draw.textBaseline = 'middle';
+                draw.textAlign = 'left';
+                draw.fillText((passed ? '[Passed] ' : '') + player, player_board_box[0] + 10 + symbol_width, player_board_box[1] - 17);
+                if (nation) {
+                    draw_player_nation(player, player_board_box);
+                } else {
+                    draw.font = '32px sans-serif';
+                    draw.lineWidth = 3;
+                    draw.fillStyle = '#000000';
+                    draw.strokeStyle = '#000000';
+                    draw.textBaseline = 'middle';
+                    draw.textAlign = 'left';
+                    draw.fillText('No nation assigned', player_board_box[0] + 5, player_board_box[1] + 20);
+                }
+                draw.font = '24px sans-serif';
+                draw.lineWidth = 7;
+                draw.fillStyle = '#ffffff';
+                draw.strokeStyle = '#000000';
+                draw.textBaseline = 'middle';
+                draw.textAlign = 'center';
+                player_area_box[3] += vertical_size + 40;
+            }
+            hitboxes = null;
+            hitboxes = [];
+            draw.fillStyle = background_color;
+            draw.fillRect(0, 0, canvas_width, canvas_height);
+            const round = state['round'];
+            const options = state['next_move_options'];
+            const current_player = state['next_move_player'];
+            const player_is_next = current_player == username;
+            const active_player = player_is_next || is_superuser;
+            const enable_hitboxes = active_player;
+            const progress_board = state['progress_board'];
+            const architects = state['architects'];
+            const turmoil = state['turmoil'];
+            const event = state['event'];
+            const war = state['war'];
+            const war_value = state['war_value'];
+            var vertical_offset = 0;
+            for (var progress_board_location in progress_board) {
+                if (progress_board_location.startsWith('P4')) {
+                    vertical_offset += 300;
+                    break;
+                }
+            }
+            draw_image('Board', board_box[0], vertical_offset + board_box[1]);
+            if (round >= 1) {
+                var round_box = [...board_boxes['Round' + round]];
+                round_box[1] += vertical_offset;
+                draw_image('Round', round_box[0], round_box[1]);
+            }
+            for (var i = 0; i < players.length; i++) {
+                const player = players[i];
+                const player_color = player_to_color[player];
+                const passed = state['players'][player]['passed'];
+                var player_box = [...board_boxes['Player' + (i + 1)]];
+                player_box[1] += vertical_offset;
+                const player_token = (passed ? 'Passed' : '') + 'Player' + player_color + (player_symbols ? 'Symbol' : '');
+                draw_image(player_token, player_box[0], player_box[1]);
+            }
+            draw.font = '40px sans-serif';
+            draw.lineWidth = 7;
+            draw.fillStyle = '#ffffff';
+            draw.strokeStyle = '#000000';
+            draw.textBaseline = 'middle';
+            draw.textAlign = 'center';
+            if (architects) {
+                var architects_box = [...board_boxes['Architects']];
+                architects_box[1] += vertical_offset;
+                draw_image('ArchitectBig', architects_box[0], architects_box[1]);
+                if (enable_hitboxes && options.includes('Hire')) {
+                    highlight_action(architects_box);
+                    hitboxes.push({
+                        'box': architects_box,
+                        'move': 'Hire',
+                        'function': null,
+                        'enabled': true
+                    });
+                }
+                draw_text(architects, architects_box[0] + 32, architects_box[1] + 37);
+            }
+            if (turmoil) {
+                var turmoil_box = [...board_boxes['Turmoil']];
+                turmoil_box[1] += vertical_offset;
+                draw_image('TurmoilBig', turmoil_box[0], turmoil_box[1]);
+                if (enable_hitboxes && options.includes('Turmoil')) {
+                    highlight_action(turmoil_box);
+                    hitboxes.push({
+                        'box': turmoil_box,
+                        'move': 'Turmoil',
+                        'function': null,
+                        'enabled': true
+                    });
+                }
+                draw_text(turmoil, turmoil_box[0] + 50, turmoil_box[1] + 77);
+            }
+            if (event) {
+                var event_box = [...board_boxes['Event']];
+                event_box[1] += vertical_offset;
+                draw_image(event, event_box[0], event_box[1]);
+            }
+            if (war) {
+                var war_box = [...board_boxes['War']];
+                war_box[1] += vertical_offset;
+                draw_image(war, war_box[0], war_box[1]);
+            }
+            var progress_board_hitboxes = false;
+            for (var i = 0; i < options.length; i++) {
+                const option = options[i];
+                if (/P[0-9][0-9]$/.test(option)) {
+                    progress_board_hitboxes = true;
+                    break;
+                }
+            }
+            for (var progress_board_location in progress_board) {
+                const card = progress_board[progress_board_location];
+                var box = [...board_boxes[progress_board_location]];
+                box[1] += vertical_offset;
+                draw_image(card, box[0], box[1]);
+                if (enable_hitboxes && progress_board_hitboxes) {
+                    hitboxes.push({
+                        'box': box,
+                        'move': null,
+                        'function': get_click_progress_board(progress_board_location),
+                        'enabled': true
+                    });
+                }
+                if (marked_cards.includes(card)) {
+                    draw_image('MarkerBig', box[0] + markers_box[0], box[1] + markers_box[1]);
+                }
+            }
+            vertical_offset += board_box[3];
+            var stability_values = [];
+            var stability_to_tokens = {};
+            var military_values = [];
+            var military_to_tokens = {};
+            var book_values = [];
+            var books_to_tokens = {};
+            for (var i = 0; i < players.length; i++) {
+                const player = players[i];
+                const player_info = state['players'][player];
+                const passed = player_info['passed'];
+                const resources = player_info['resources'];
+                const color = player_to_color[player];
+                const stability = resources ? (resources['[Stability]'] ? (resources['[Stability]'] > 15 ? 15 : resources['[Stability]']) : 0) : 0;
+                const military = resources ? (resources['[Military]'] ? (resources['[Military]'] > 40 ? 40 : resources['[Military]']) : 0) : 0;
+                const books = resources ? (resources['[Books]'] ? resources['[Books]'] : 0) : 0;
+                const least_neither_most_stability = player_info['least_stability'] ? 'Least' : player_info['most_stability'] ? 'Most' : 'Neither';
+                const least_neither_most_military = player_info['least_military'] ? 'Least' : player_info['most_military'] ? 'Most' : 'Neither';
+                const player_token = (passed ? 'Passed' : '') + 'Player' + color + (player_symbols ? 'Symbol' : '');
+                stability_values.push(stability);
+                military_values.push(military);
+                book_values.push(books);
+                if (!stability_to_tokens[stability]) {
+                    stability_to_tokens[stability] = [];
+                }
+                stability_to_tokens[stability].push([player_token, least_neither_most_stability]);
+                if (!military_to_tokens[military]) {
+                    military_to_tokens[military] = [];
+                }
+                military_to_tokens[military].push([player_token, least_neither_most_military]);
+                if (!books_to_tokens[books]) {
+                    books_to_tokens[books] = [];
+                }
+                books_to_tokens[books].push([player_token, 'Neither']);
+            }
+            if (war) {
+                military_values.push(war_value);
+                if (!military_to_tokens[war_value]) {
+                    military_to_tokens[war_value] = [];
+                }
+                military_to_tokens[war_value].unshift(['War', 'Neither']);
+            }
+            stability_values = [...new Set(stability_values)].sort((a, b) => (a - b));
+            military_values = [...new Set(military_values)].sort((a, b) => (a - b));
+            book_values = [...new Set(book_values)].sort((a, b) => (a - b));
+            const value_types = ['stability', 'military', 'books'];
+            const track_info = {
+                'stability': {'image': 'StabilityBig', 'nudge': 2, 'values': stability_values, 'tokens': stability_to_tokens},
+                'military': {'image': 'MilitaryBig', 'nudge': 8, 'values': military_values, 'tokens': military_to_tokens},
+                'books': {'image': 'BookBig', 'nudge': 9, 'values': book_values, 'tokens': books_to_tokens}
+            };
+            const narrow = players.length >= 6;
+            const space_between_tracks = narrow ? 30 : 40;
+            const token_width = narrow ? 66 : 70;
+            const padding = narrow ? 20 : 30;
+            const left_padding = narrow ? 13 : 20;
+            const track_color = '#b0b0b0';
+            const least_neither_most_to_color = {'Least': '#b00000', 'Neither': track_color, 'Most': '#009030'};
+            draw.font = 'bold 40px sans-serif';
+            draw.textBaseline = 'middle';
+            draw.textAlign = 'center';
+            draw.fillStyle = '#000000';
+            fill_rect([0, vertical_offset, board_box[2], 94]);
+            var horizontal_offset = 0;
+            for (var i = 0; i < value_types.length; i++) {
+                const value_type = value_types[i];
+                const this_track_info = track_info[value_type];
+                const image_name = this_track_info['image'];
+                const image_nudge = this_track_info['nudge'];
+                const values = this_track_info['values'];
+                const value_to_tokens = this_track_info['tokens'];
+                draw.fillStyle = track_color;
+                if (i != 0) {
+                    fill_rect([horizontal_offset + 1, vertical_offset, 38, 94]);
+                    horizontal_offset += space_between_tracks;
+                }
+                bordered_fill_rect([horizontal_offset, vertical_offset, 75, 94]);
+                draw_image(image_name, horizontal_offset + image_nudge, vertical_offset + 16);
+                horizontal_offset += 75;
+                for (var j = 0; j < values.length; j++) {
+                    const value = values[j];
+                    const tokens = value_to_tokens[value];
+                    const width = token_width * tokens.length + padding;
+                    draw.fillStyle = track_color;
+                    bordered_fill_rect([horizontal_offset, vertical_offset, width, 94]);
+                    draw.fillStyle = '#000000';
+                    draw.fillText(value, horizontal_offset + width / 2 - 1, vertical_offset + 23);
+                    for (k = 0; k < tokens.length; k++) {
+                        const token = tokens[k][0];
+                        const least_neither_most = tokens[k][1];
+                        const arrow_color = least_neither_most_to_color[least_neither_most];
+                        const left_offset = horizontal_offset + left_padding + token_width * k;
+                        const top_offset = vertical_offset + 41;
+                        draw_image(token, left_offset, top_offset);
+                        draw.lineWidth = 1;
+                        draw.strokeStyle = '#000000';
+                        draw.fillStyle = arrow_color;
+                        if (least_neither_most == 'Least') {
+                            draw.beginPath();
+                            draw.moveTo(left_offset - 3, top_offset + 40);
+                            draw.lineTo(left_offset + 7, top_offset + 40);
+                            draw.lineTo(left_offset + 2, top_offset + 51);
+                            draw.closePath();
+                            draw.stroke();
+                            draw.fill();
+                        } else if (least_neither_most == 'Most') {
+                            draw.beginPath();
+                            draw.moveTo(left_offset + 63, top_offset + 49);
+                            draw.lineTo(left_offset + 53, top_offset + 49);
+                            draw.lineTo(left_offset + 58, top_offset + 38);
+                            draw.closePath();
+                            draw.stroke();
+                            draw.fill();
+                        }
+                    }
+                    horizontal_offset += width;
+                }
+            }
+            draw.strokeStyle = '#000000';
+            draw.lineWidth = 7;
+            draw.fillStyle = track_color;
+            if (horizontal_offset + 2 < board_box[2]) {
+                fill_rect([horizontal_offset + 1, vertical_offset, board_box[2] - horizontal_offset - 1, 94]);
+            }
+            vertical_offset += 94;
+            var messages_and_buttons = [message_boxes, buttons];
+            messages_and_buttons = Object.assign({}, ...messages_and_buttons);
+            for (var name in messages_and_buttons) {
+                const button_info = messages_and_buttons[name];
+                var box = [...button_info['box']];
+                box[1] += vertical_offset;
+                const border = button_info['border'];
+                const margin = button_info['margin'];
+                const text = button_info['text'];
+                const color = button_info['color'];
+                const text_color = button_info['text_color'];
+                var font_size = button_info['font_size'];
+                const enabled = button_info['enabled'];
+                const fill_color = enabled ? color : disabled_background_color;
+                const mid_x = Math.floor(box[0] + box[2] / 2);
+                const mid_y = Math.floor(box[1] + box[3] / 2);
+                while (font_size > 8) {
+                    draw.font = font_size + 'px sans-serif';
+                    const text_measurements = draw.measureText(text);
+                    if (text_measurements.width <= box[2] - 2 * margin) {
+                        break;
+                    }
+                    font_size--;
+                }
+                draw.font = font_size + 'px sans-serif';
+                draw.fillStyle = fill_color;
+                if (border) {
+                    bordered_fill_rect(box);
+                } else {
+                    fill_rect(box);
+                }
+                draw.fillStyle = enabled ? text_color : disabled_text_color;
+                if (message_boxes[name]) {
+                    draw.textBaseline = 'middle';
+                    draw.textAlign = 'left';
+                    const current_player_text = 'Current player: ';
+                    if (text.startsWith(current_player_text)) {
+                        const player = text.substring(current_player_text.length);
+                        const passed = state['players'][player]['passed'];
+                        const player_token = (passed ? 'Passed' : '') + 'Player' + player_to_color[player] + (player_symbols ? 'Symbol' : '');
+                        draw.fillText(current_player_text, box[0] + 20, mid_y);
+                        draw_image(player_token, box[0] + 312, mid_y - 21);
+                        draw.fillText(player, box[0] + 380, mid_y);
+                    } else {
+                        draw.fillText(text, box[0] + 20, mid_y);
+                    }
+                } else {
+                    draw.textBaseline = 'middle';
+                    draw.textAlign = 'center';
+                    draw.fillText(text, mid_x, mid_y);
+                    if (enable_hitboxes) {
+                        hitboxes.push({
+                            'box': box,
+                            'move': button_info['move'],
+                            'function': button_info['function'],
+                            'enabled': enabled
+                        });
+                    }
+                }
+            }
+            if (option_buttons !== null) {
+                const option_buttons_info = message_boxes['options'];
+                const options_box = option_buttons_info['box'];
+                const border = option_buttons_info['border'];
+                const margin = option_buttons_info['margin'];
+                var font_size = option_buttons_info['font_size'];
+                draw.textBaseline = 'middle';
+                draw.textAlign = 'center';
+                while (font_size > 8) {
+                    draw.font = font_size + 'px sans-serif';
+                    var option_offset = 20;
+                    for (var i = 0; i < options.length; i++) {
+                        const option = options[i];
+                        if (!option_buttons[option]) {
+                            continue;
+                        }
+                        var option_info = option_buttons[option];
+                        const text = option_info['text'];
+                        const text_measurements = draw.measureText(text);
+                        option_offset += text_measurements.width + 20 + 2 * margin;
+                    }
+                    if (option_offset <= options_box[2]) {
+                        break;
+                    }
+                    font_size--;
+                }
+                draw.font = font_size + 'px sans-serif';
+                var option_offset = 20;
+                const resource_amount_regex = new RegExp('^(\\d+) \\[(Food|Stone|Gold|Book|Books)\\]$');
+                for (var i = 0; i < options.length; i++) {
+                    const option = options[i];
+                    if (!option_buttons[option]) {
+                        continue;
+                    }
+                    var option_info = option_buttons[option];
+                    option_info['box'][0] = option_offset;
+                    option_info['box'][1] = options_box[1] + 2;
+                    const color = option_info['color'];
+                    const text_color = option_info['text_color'];
+                    const text = option_info['text'];
+                    var resource_amount = 0;
+                    var resource_image_name = null;
+                    if (resource_amount_regex.test(text)) {
+                        const resource_values = resource_amount_regex.exec(text);
+                        resource_amount = resource_values[1];
+                        resource_image_name = resource_images[resource_values[2]];
+                        option_info['box'][2] = resource_image_sizes[resource_image_name][0] + 20;
+                    } else {
+                        const text_measurements = draw.measureText(text);
+                        option_info['box'][2] = text_measurements.width + 40;
+                    }
+                    var box = [...option_info['box']];
+                    box[1] += vertical_offset;
+                    const mid_x = Math.floor(box[0] + box[2] / 2);
+                    const mid_y = Math.floor(box[1] + box[3] / 2);
+                    if (color !== null) {
+                        draw.lineWidth = 1;
+                        draw.fillStyle = color;
+                        bordered_fill_rect(box);
+                    }
+                    if (resource_image_name) {
+                        const top = Math.floor(box[1] + (box[3] - resource_image_sizes[resource_image_name][1]) / 2);
+                        draw.font = '24px sans-serif';
+                        draw.lineWidth = 7;
+                        draw.fillStyle = '#ffffff';
+                        draw.strokeStyle = '#000000';
+                        draw_image(resource_image_name, box[0] + 10, top);
+                        draw_text(resource_amount, mid_x, mid_y);
+                        draw.font = font_size + 'px sans-serif';
+                    } else {
+                        draw.font = font_size + 'px sans-serif';
+                        draw.fillStyle = text_color;
+                        draw.fillText(text, mid_x, mid_y);
+                    }
+                    if (enable_hitboxes) {
+                        hitboxes.push({
+                            'box': box,
+                            'move': option_info['move'],
+                            'function': null,
+                            'enabled': option_info['enabled']
+                        });
+                    }
+                    option_offset += box[2] + 20;
+                }
+            }
+            vertical_offset += 260;
+            if (phase == 'Drafting Phase') {
+                const available_nations = state['available_nations'];
+                const nations = state['nations'];
+                for (var i = 0; i < available_nations.length; i++) {
+                    const nation = available_nations[i];
+                    const nation_info = nations[nation];
+                    const dynasties = nation_info['dynasties'];
+                    const slots = nation_info['slots'];
+                    const resources = nation_info['resources'];
+                    const workers = nation_info['workers'];
+                    const points = nation_info['points'];
+                    const food = resources ? (resources['[Food]'] ? resources['[Food]'] : 0) : 0;
+                    const stone = resources ? (resources['[Stone]'] ? resources['[Stone]'] : 0) : 0;
+                    const gold = resources ? (resources['[Gold]'] ? resources['[Gold]'] : 0) : 0;
+                    const books = resources ? (resources['[Books]'] ? resources['[Books]'] : 0) : 0;
+                    const box = [0, vertical_offset, player_board_size[0], player_board_size[1]];
+                    const nation_prefix_regex = new RegExp('^' + nation_prefixes[nation] + '_');
+                    draw_image(nation, 0, vertical_offset);
+                    for (var j = 0; j < dynasties.length; j++) {
+                        const dynasty = dynasties[j];
+                        draw_image(dynasty, player_board_size[0] + 10, vertical_offset + j * (10 + card_height));
+                    }
+                    for (var slot in slots) {
+                        const card = slots[slot];
+                        if (card && (!nation_prefix_regex.test(card) || dynasty_cards.includes(card))) {
+                            const slot_box = nation_boxes[nation][slot];
+                            draw_image(card, slot_box[0], vertical_offset + slot_box[1]);
+                        }
+                    }
+                    draw.font = 'bold 40px sans-serif';
+                    draw.fillStyle = '#000000';
+                    draw.fillText(food, box[0] + 1032, box[1] + 626);
+                    draw.fillText(stone, box[0] + 1102, box[1] + 626);
+                    draw.fillText(gold, box[0] + 1176, box[1] + 626);
+                    draw.fillText(points, box[0] + 1251, box[1] + 626);
+                    draw.fillText(workers, box[0] + 1327, box[1] + 626);
+                    if (enable_hitboxes && options.includes(nation)) {
+                        highlight_action(box);
+                        hitboxes.push({
+                            'box': box,
+                            'move': nation,
+                            'function': null,
+                            'enabled': true
+                        });
+                    }
+                    vertical_offset += player_board_size[1] + 20;
+                }
+            } else {
+                var event_options = options.length > 0;
+                for (var i = 0; i < options.length; i++) {
+                    const option = options[i];
+                    if (!event_card_abbrs[option]) {
+                        event_options = false;
+                        break;
+                    }
+                }
+                if (event_options) {
+                    const event_box = [30, vertical_offset, card_width, card_height];
+                    for (var i = 0; i < options.length; i++) {
+                        const option = options[i];
+                        const card = event_card_abbrs[option];
+                        const box = [event_box[0] + i * (card_width + 20), event_box[1], event_box[2], event_box[3]];
+                        draw_image(card, box[0], box[1]);
+                        if (enable_hitboxes) {
+                            highlight_action(box);
+                            hitboxes.push({
+                                'box': box,
+                                'move': option,
+                                'function': null,
+                                'enabled': true
+                            });
+                        }
+                    }
+                    vertical_offset += card_height + 20;
+                }
+                if (global_effects.length) {
+                    draw.font = '42px sans-serif';
+                    draw.fillStyle = '#000000';
+                    draw.textBaseline = 'middle';
+                    draw.textAlign = 'left';
+                    draw.fillText('Reminders:', 15, vertical_offset + 50);
+                    horizontal_offset = 250;
+                    for (var i = 0; i < global_effects.length; i++) {
+                        if (horizontal_offset + 120 > board_box[2]) {
+                            horizontal_offset = 250;
+                            vertical_offset += 125;
+                        }
+                        const global_effect = global_effects[i][0];
+                        const player = global_effects[i][1];
+                        const box = [horizontal_offset, vertical_offset, 100, 100];
+                        const outline_box = [box[0] - 8, box[1] - 8, box[2] + 16, box[3] + 16];
+                        draw.fillStyle = player_color_codes[player_to_color[player]];
+                        bordered_fill_rect(outline_box);
+                        draw_image(global_effect, box[0], box[1]);
+                        hitboxes.push({
+                            'box': outline_box,
+                            'move': null,
+                            'function': get_show_board(player),
+                            'enabled': true
+                        });
+                        horizontal_offset += 125;
+                    }
+                    vertical_offset += 120;
+                }
+            }
+            const board_tabs_box = [0, vertical_offset, board_box[2], 40];
+            draw_board_tabs(board_tabs_box, show_boards, toggle_show_boards);
+            vertical_offset += board_tabs_box[3];
+            if (show_boards) {
+                if (!show_player_board) {
+                    for (var i = 0; i < players.length; i++) {
+                        const player = players[i];
+                        vertical_offset += 10;
+                        var player_area_box = [0, vertical_offset, board_box[2], 0];
+                        draw_player_board(player, player_area_box);
+                        vertical_offset += player_area_box[3];
+                    }
+                } else {
+                    const player = show_player_board;
+                    vertical_offset += 10;
+                    var player_area_box = [0, vertical_offset, board_box[2], 0];
+                    draw_player_board(player, player_area_box);
+                    vertical_offset += player_area_box[3];
+                }
+            }
+            vertical_offset += 20;
+            canvas_height = vertical_offset;
+            game_canvas.width = Math.floor(canvas_width * scale);
+            game_canvas.height = Math.floor(canvas_height * scale);
+            game_canvas.getContext('2d').drawImage(game_canvas.draw_canvas, 0, 0, canvas_width, canvas_height, 0, 0, game_canvas.width, game_canvas.height);
+            game_canvas.draw_canvas = null;
+            drawn_once = true;
+            position_logs();
+        }
+
+        function draw_if_loaded() {
+            var all_loaded_or_failed = true;
+            for (var image_name in images) {
+                var image = images[image_name]['image'];
+                if (!(image.image_loaded || image.image_load_failure)) {
+                    all_loaded_or_failed = false;
+                    break;
+                }
+                if (image.image_load_failure) {
+                    images[image_name]['image'] = document.createElement('canvas');
+                    image = images[image_name]['image'];
+                    image.image_loaded = true;
+                    image.image_load_failure = false;
+                }
+            }
+            var message = '';
+            var can_join = false;
+            if (all_loaded_or_failed) {
+                downloading_images = false;
+                if (state) {
+                    if (drawn_once) {
+                        draw_state();
+                        return;
+                    }
+                    message = 'Drawing match...';
+                } else if (players_data !== null) {
+                    message = 'Waiting for players to join...';
+                    const player_names = players_data;
+                    if (!is_superuser && (player_names.includes(username) ? !has_accepted : player_names.length < player_count)) {
+                        can_join = true;
+                    }
+                } else {
+                    message = 'Connecting...';
+                }
+            } else {
+                if (drawn_once) {
+                    position_logs();
+                    return;
+                } else {
+                    message = 'Downloading images...';
+                }
+            }
+            canvas_height = can_join ? 500 : 60;
+            var vertical_offset = 60;
+            var game_canvas = document.getElementById('game');
+            game_canvas.draw_canvas = document.createElement('canvas');
+            game_canvas.draw_canvas.width = canvas_width;
+            game_canvas.draw_canvas.height = canvas_height;
+            var draw = game_canvas.draw_canvas.getContext('2d');
+            draw.fillStyle = background_color;
+            fill_rect_and_update_height(game_canvas, [0, 0, canvas_width, canvas_height]);
+            draw.fillStyle = '#000000';
+            fill_rect_and_update_height(game_canvas, [0, 0, canvas_width, 60]);
+            draw = game_canvas.draw_canvas.getContext('2d');
+            draw.font = '42px sans-serif';
+            draw.fillStyle = '#ffffff';
+            draw.textBaseline = 'middle';
+            draw.textAlign = 'left';
+            draw.fillText(message, 20, 30);
+            if (can_join) {
+                hitboxes = null;
+                hitboxes = [];
+                const player_names = players_data;
+                vertical_offset = 80;
+                function draw_join_button(box, color, text, func, selected) {
+                    const fill_color = color;
+                    const text_color = '#000000';
+                    const mid_y = Math.floor(box[1] + box[3] / 2);
+                    if (selected) {
+                        draw.lineWidth = 2;
+                        draw.strokeStyle = '#000000';
+                        stroke_rect_and_update_height(game_canvas, [box[0] - 5, box[1] - 5, box[2] + 10, box[3] + 10]);
+                    }
+                    draw.font = '48px sans-serif';
+                    draw.fillStyle = fill_color;
+                    bordered_fill_rect_and_update_height(game_canvas, box);
+                    draw = game_canvas.draw_canvas.getContext('2d');
+                    draw.fillStyle = text_color;
+                    draw.textBaseline = 'middle';
+                    draw.textAlign = 'left';
+                    draw.fillText(text, box[0] + 20, mid_y);
+                    hitboxes.push({
+                        'box': box,
+                        'move': null,
+                        'function': func,
+                        'enabled': true
+                    });
+                }
+                draw_join_button([500, vertical_offset, 210, 60], selected_join_option >= 0 ? '#90f090' : '#c0c0c0', 'Confirm', join_or_decline);
+                if (growth_resources > 0) {
+                    update_height(game_canvas, vertical_offset + 80 + 10);
+                    draw_join_button([10, vertical_offset, 150, 60], '#ff6622', 'Join!', get_select_join(growth_resources), selected_join_option == growth_resources);
+                    vertical_offset += 80;
+                } else {
+                    update_height(game_canvas, vertical_offset + 4 * 80 + 10);
+                    for (var growth_option = 1; growth_option <= 4; growth_option++) {
+                        const growth_text = ['Emperor', 'King', 'Prince', 'Chieftain'][growth_option-1];
+                        draw_join_button([10, vertical_offset, 380, 60], '#ff6622', 'Join! - ' + growth_text, get_select_join(growth_option), growth_option == selected_join_option);
+                        vertical_offset += 80;
+                    }
+                }
+                if (player_names.includes(username) && !has_accepted) {
+                    update_height(game_canvas, vertical_offset + 80 + 10);
+                    draw_join_button([10, vertical_offset, 210, 60], '#ff6060', 'Decline.', get_select_join(0), selected_join_option == 0);
+                    vertical_offset += 80;
+                }
+            }
+            canvas_height = vertical_offset;
+            game_canvas.width = Math.floor(canvas_width * scale);
+            game_canvas.height = Math.floor(canvas_height * scale);
+            game_canvas.getContext('2d').drawImage(game_canvas.draw_canvas, 0, 0, canvas_width, canvas_height, 0, 0, game_canvas.width, game_canvas.height);
+            game_canvas.draw_canvas = null;
+            if (all_loaded_or_failed && state) {
+                setTimeout(draw_state, 1);
+            } else {
+                position_logs();
+            }
+        }
+
+        function update_state() {
+            if (!state) {
+                return;
+            }
+            const current_player = state['next_move_player'];
+            const player_is_next = current_player == username;
+            const active_player = player_is_next || is_superuser;
+            const options = state['next_move_options'];
+            const players = state['first_round_player_order'];
+            const event = state['event'];
+            const war = state['war'];
+            const progress_board = state['progress_board'];
+            if (player_to_color === null) {
+                player_to_color = {};
+                var color_index = 1;
+                for (var i = 0; i < players.length; i++) {
+                    const player = players[i];
+                    var player_color = 'Pink';
+                    if (player == username) {
+                        player_color = player_color_preferences[0];
+                    } else {
+                        player_color = player_color_preferences[color_index];
+                        color_index++;
+                    }
+                    player_to_color[player] = player_color;
+                }
+            }
+            if (follow_boards) {
+                show_player_board = current_player;
+            }
+            buttons['pass']['enabled'] = active_player && options.includes('Pass');
+            buttons['undo']['enabled'] = active_player && state['undo_allowed'];
+            buttons['confirm']['enabled'] = active_player && options.includes('Confirm');
+            if (state['game_over']) {
+                message_boxes['player']['text'] = 'Game over!';
+                message_boxes['choice']['text'] = '';
+                option_buttons = null;
+            } else {
+                message_boxes['player']['text'] = 'Current player: ' + state['next_move_player'];
+                if (state['invalid_move'] !== null) {
+                    message_boxes['invalid']['text'] = state['invalid_move'];
+                } else {
+                    message_boxes['invalid']['text'] = '';
+                }
+                message_boxes['choice']['text'] = state['next_move_choice'];
+                var options_without_boxes = ['Hire', 'Turmoil', 'Pass', 'Confirm'];
+                for (var nation in nation_prefixes) {
+                    options_without_boxes.push(nation);
+                }
+                for (var i = 0; i < options.length; i++) {
+                    const option = options[i];
+                    if (/P[0-9][0-9]$/.test(option)
+                        || /(A|BM|S|C|W)[0-9]$/.test(option)
+                        || option.endsWith('[Worker]')
+                        || (option.startsWith('Hire from "') && option.endsWith('"'))
+                        || (option.startsWith('Special of "') && option.endsWith('"'))
+                        || (option.startsWith('Play "') && option.endsWith('"'))
+                        || (option.startsWith('Buy "') && option.endsWith('"'))
+                        || card_names.includes(option)) {
+                        options_without_boxes.push(option);
+                    }
+                }
+                const options_box_info = message_boxes['options'];
+                const box = options_box_info['box'];
+                const font_size = options_box_info['font_size'];
+                const text_color = options_box_info['text_color'];
+                option_buttons = {};
+                var num_option_buttons = 0;
+                for (var i = 0; i < options.length; i++) {
+                    const option = options[i];
+                    if (!options_without_boxes.includes(option)) {
+                        option_buttons[option] = {
+                            'box': [box[0], box[1], 0, 56],
+                            'margin': 20,
+                            'color': '#f0f0f0',
+                            'text_color': text_color,
+                            'font_size': font_size,
+                            'text': option,
+                            'move': option,
+                            'function': null,
+                            'enabled': true
+                        };
+                        num_option_buttons++;
+                    }
+                }
+                if (num_option_buttons == 0) {
+                    option_buttons = null;
+                }
+            }
+            var new_image = false;
+            var all_nations = [];
+            var all_cards = [];
+            marked_cards = [];
+            global_effects = [];
+            for (var i = 0; i < state['available_nations'].length; i++) {
+                const nation = state['available_nations'][i];
+                const dynasties = state['nations'][nation]['dynasties'];
+                const slots = state['nations'][nation]['slots'];
+                const nation_prefix_regex = new RegExp('^' + nation_prefixes[nation] + '_');
+                all_nations.push(nation);
+                for (var j = 0; j < dynasties.length; j++) {
+                    all_cards.push(dynasties[j]);
+                }
+                for (var slot in slots) {
+                    const card = slots[slot];
+                    if (card && (!nation_prefix_regex.test(card) || dynasty_cards.includes(card))) {
+                        all_cards.push(card);
+                    }
+                }
+            }
+            for (var i = 0; i < players.length; i++) {
+                const player = players[i];
+                const player_info = state['players'][player];
+                const nation = player_info['nation'];
+                if (nation) {
+                    all_nations.push(nation);
+                }
+            }
+            for (var i = 0; i < all_nations.length; i++) {
+                const nation = all_nations[i];
+                if (!images[nation]) {
+                    images[nation] = {'src': nations_path + '/' + nation + '.jpg', 'image': null};
+                    new_image = true;
+                }
+            }
+            if (event) {
+                all_cards.push(event);
+            }
+            if (war) {
+                all_cards.push(war);
+            }
+            for (var progress_board_location in progress_board) {
+                const card = progress_board[progress_board_location];
+                all_cards.push(card);
+            }
+            for (var i = 0; i < players.length; i++) {
+                const player = players[i];
+                const player_info = state['players'][player];
+                const nation = player_info['nation'];
+                if (!nation) {
+                    continue;
+                }
+                const cards = player_info['cards'];
+                const dynasties = player_info['dynasties'];
+                const nation_prefix_regex = new RegExp('^' + nation_prefixes[nation] + '_');
+                for (var card in cards) {
+                    if (card && (!nation_prefix_regex.test(card) || dynasty_cards.includes(card))) {
+                        all_cards.push(card);
+                        const card_info = cards[card];
+                        if (card_info['marked']) {
+                            marked_cards.push(...card_info['marked']);
+                        }
+                    }
+                    if (card && cards[card]['global']) {
+                        global_effects.push([card + '_GE', player]);
+                    }
+                }
+                for (var j = 0; j < dynasties.length; j++) {
+                    const dynasty = dynasties[j];
+                    if (dynasty) {
+                        all_cards.push(dynasty);
+                    }
+                }
+            }
+            for (var i = 0; i < options.length; i++) {
+                const option = options[i];
+                if (event_card_abbrs[option]) {
+                    all_cards.push(event_card_abbrs[option]);
+                }
+            }
+            for (var i = 0; i < all_cards.length; i++) {
+                const card = all_cards[i];
+                if (!images[card]) {
+                    images[card] = {'src': cards_path + '/' + card + '.jpg', 'image': null};
+                    new_image = true;
+                }
+            }
+            for (var i = 0; i < global_effects.length; i++) {
+                const global_effect = global_effects[i][0];
+                if (!images[global_effect]) {
+                    images[global_effect] = {'src': global_effects_path + '/' + global_effect + '.jpg', 'image': null};
+                    new_image = true;
+                }
+            }
+            if (new_image) {
+                start_loading_images();
+            }
+            draw_if_loaded();
+            var match_log = document.getElementById('match-log');
+            match_log.value = match_log_data;
+            match_log.scrollTop = match_log.scrollHeight;
+        }
+
+        document.getElementById('game').addEventListener('click', (event) =>
+            {
+                if (data === null || hitboxes === null) {
+                    return;
+                }
+                var inverse_scale;
+                inverse_scale = 1 / scale;
+                const x = event.offsetX * inverse_scale;
+                const y = event.offsetY * inverse_scale;
+                for (var i = hitboxes.length - 1; i >= 0; i--) {
+                    const hitbox = hitboxes[i];
+                    const box = hitbox['box'];
+                    if (hitbox['enabled'] && box[0] <= x && x < box[0] + box[2] && box[1] <= y && y < box[1] + box[3]) {
+                        var draw = event.target.getContext('2d');
+                        draw.lineWidth = 3;
+                        draw.strokeStyle = '#ff00ff';
+                        draw.strokeRect(scale * (box[0] - 1), scale * (box[1] - 1), scale * (box[2] + 2), scale * (box[3] + 2));
+                        if (hitbox['move'] !== null) {
+                            if (state && state['next_move_player'] == username || is_superuser) {
+                                send_message({'move': hitbox['move']});
+                            }
+                        } else {
+                            hitbox['function']();
+                        }
+                        return;
+                    }
+                }
+            }
+        );
+    </script>
+{% endblock %}

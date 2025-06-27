@@ -1,0 +1,62 @@
+{% extends 'Nations/base.html' %}
+
+{% block content %}
+    <h1>Your Archived Nations Matches</h1>
+    <p>These will be moved out of the archive upon any join, decline, or change in turn.</p>
+    {% if invited_matches %}
+        <h2>Invitations:</h2>
+        <div class="py-1">
+            {% for match in invited_matches %}
+                {% include 'Nations/match_card.html' %}
+            {% endfor %}
+        </div>
+    {% endif %}
+    <h2>Your turn:</h2>
+    <div class="py-1">
+        {% if my_turn_matches %}
+            {% for match in my_turn_matches %}
+                {% include 'Nations/match_card.html' %}
+            {% endfor %}
+        {% else %}
+            <ul>
+                <li>None.</li>
+            </ul>
+        {% endif %}
+    </div>
+    <h2>Not your turn:</h2>
+    <div class="py-1">
+        {% if other_matches %}
+            {% for match in other_matches %}
+                {% include 'Nations/match_card.html' %}
+            {% endfor %}
+        {% else %}
+            <ul>
+                <li>None.</li>
+            </ul>
+        {% endif %}
+    </div>
+    <h2>Open:</h2>
+    <div class="py-1">
+        {% if open_matches %}
+            {% for match in open_matches %}
+                {% include 'Nations/match_card.html' %}
+            {% endfor %}
+        {% else %}
+            <ul>
+                <li>None.</li>
+            </ul>
+        {% endif %}
+    </div>
+    <h2>Completed:</h2>
+    <div class="py-1">
+        {% if completed_matches %}
+            {% for match in completed_matches %}
+                {% include 'Nations/match_card.html' %}
+            {% endfor %}
+        {% else %}
+            <ul>
+                <li>None.</li>
+            </ul>
+        {% endif %}
+    </div>
+{% endblock %}

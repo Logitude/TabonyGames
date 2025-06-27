@@ -1,0 +1,41 @@
+{% extends 'Nations/base.html' %}
+
+{% block content %}
+    <h1>Archived Open Nations Matches</h1>
+    {% if invited_matches %}
+        <h2>Invitations:</h2>
+        <div class="py-1">
+            {% for match in invited_matches %}
+                {% include 'Nations/match_card.html' %}
+            {% endfor %}
+        </div>
+    {% endif %}
+    <h2>Open:</h2>
+    <div class="py-1">
+        {% if open_matches %}
+            {% for match in open_matches %}
+                {% include 'Nations/match_card.html' %}
+            {% endfor %}
+        {% else %}
+            <ul>
+                <li>None.</li>
+            </ul>
+        {% endif %}
+    </div>
+    {% if joined_matches %}
+        <h2>Joined:</h2>
+        <div class="py-1">
+            {% for match in joined_matches %}
+                {% include 'Nations/match_card.html' %}
+            {% endfor %}
+        </div>
+    {% endif %}
+    {% if full_matches %}
+        <h2>Full:</h2>
+        <div class="py-1">
+            {% for match in full_matches %}
+                {% include 'Nations/match_card.html' %}
+            {% endfor %}
+        </div>
+    {% endif %}
+{% endblock %}

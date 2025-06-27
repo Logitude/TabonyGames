@@ -1,0 +1,117 @@
+{% extends 'base.html' %}
+
+{% load widget_tweaks %}
+
+{% block content %}
+    <style>
+        @keyframes fadeout {
+            from {opacity: 1;}
+            to {opacity: 0;}
+        }
+    </style>
+    <div class="d-grid gap-3">
+        <h1>Profile for {{ user.username }}</h1>
+        <ul>
+            <li>
+                Email address: {{ user.email }}
+                <ul>
+                    <li>To change the email address for your account, you will need to email a request to <a href="mailto:{{ help_email_address }}">{{ help_email_address }}</a></li>
+                </ul>
+            </li>
+            <li><a href="{% url 'password_change' %}">Change password</a></li>
+        </ul>
+        <div>
+            <form method="post" action="{% url 'profile' %}">
+                {% csrf_token %}
+                <div class="d-grid gap-3">
+                    <h2>Profile Settings:</h2>
+                    <div class="d-grid gap-3">
+                        {% for field in form %}
+                            <div class="form-group">
+                                <div class="col-sm-6 px-0">
+                                    {% if field.field.widget.attrs.class == 'form-check-input' %}
+                                        {% render_field field %}
+                                        <label class="form-check-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                    {% elif field.field.widget.attrs.class == 'form-select' %}
+                                        <div class="form-floating">
+                                            {% render_field field %}
+                                            <label class="form-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                        </div>
+                                    {% else %}
+                                        <label class="form-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                        {% render_field field class="form-control" %}
+                                    {% endif %}
+                                    {% for error_message in field.errors %}
+                                        <div>
+                                            <small id="id_{{ field.name }}" class="text-danger">{{ error_message }}</small>
+                                        </div>
+                                    {% endfor %}
+                                    {% if field.help_text %}
+                                        <div>
+                                            <small id="id_{{ field.name }}" class="text-mutex">{{ field.help_text }}</small>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <h2>Nations Settings:</h2>
+                    <div class="d-grid gap-3">
+                        {% for field in nations_form %}
+                            <div class="form-group">
+                                <div class="col-sm-6 px-0">
+                                    {% if field.field.widget.attrs.class == 'form-check-input' %}
+                                        {% render_field field %}
+                                        <label class="form-check-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                    {% elif field.field.widget.attrs.class == 'form-select' %}
+                                        <div class="form-floating">
+                                            {% render_field field %}
+                                            <label class="form-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                        </div>
+                                    {% else %}
+                                        <label class="form-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                        {% render_field field class="form-control" %}
+                                    {% endif %}
+                                    {% for error_message in field.errors %}
+                                        <div>
+                                            <small id="id_{{ field.name }}" class="text-danger">{{ error_message }}</small>
+                                        </div>
+                                    {% endfor %}
+                                    {% if field.help_text %}
+                                        <div>
+                                            <small id="id_{{ field.name }}" class="text-mutex">{{ field.help_text }}</small>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                    <div>
+                        <button class="btn btn-primary" type="submit">Update Settings</button>
+                    </div>
+                </div>
+            </form>
+            {% if messages %}
+                <div class="d-grid gap-3">
+                    {% for message in messages %}
+                        {% if message.level == DEFAULT_MESSAGE_LEVELS.SUCCESS %}
+                            <p id="success_message_{{ forloop.counter }}" style="animation: fadeout; animation-delay: 5s; animation-duration: 1s; animation-fill-mode: forwards;">
+                                {{ message }}
+                            </p>
+                            <script>
+                                const success_message = document.getElementById('success_message_{{ forloop.counter }}');
+                                success_message.addEventListener('animationend', (event) =>
+                                    {
+                                        success_message.style.display = 'none';
+                                    }
+                                );
+                            </script>
+                        {% else %}
+                            <p>{{ message }}</p>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+{% endblock %}
