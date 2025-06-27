@@ -1,0 +1,10 @@
+{% extends 'Nations/base.html' %}
+
+{% block content %}
+    <h1>Archived Nations Matches</h1>
+    <p>Here lie matches that have not changed in more than a week. (new player's turn or join/decline)</p>
+    <h1><a href="{% url 'Nations:archive_open' %}">Still Open</a></h1>
+    <h1><a href="{% url 'Nations:archive_ongoing' %}">Possibly Ongoing</a></h1>
+    <h1><a href="{% url 'Nations:archive_completed' %}">Completed</a></h1>
+    <h1><a href="{% url 'Nations:archive_mine' %}">Yours</a></h1>
+{% endblock %}
