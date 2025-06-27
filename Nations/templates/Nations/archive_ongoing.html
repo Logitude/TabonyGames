@@ -1,0 +1,17 @@
+{% extends 'Nations/base.html' %}
+
+{% block content %}
+    <h1>Archived Ongoing Nations Matches</h1>
+    <p>These will be moved out of the archive if a player takes their turn.</p>
+    <div class="py-1">
+        {% if ongoing_matches %}
+            {% for match in ongoing_matches %}
+                {% include 'Nations/match_card.html' %}
+            {% endfor %}
+        {% else %}
+            <ul>
+                <li>None.</li>
+            </ul>
+        {% endif %}
+    </div>
+{% endblock %}

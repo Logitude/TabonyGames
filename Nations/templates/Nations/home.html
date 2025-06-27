@@ -1,0 +1,10 @@
+{% extends 'Nations/base.html' %}
+
+{% block content %}
+    <h1><a href="{% url 'Nations:create' %}">Create Match</a></h1>
+    <h1><a href="{% url 'Nations:my_matches' %}">Your Matches</a></h1>
+    <h1><a href="{% url 'Nations:open_matches' %}">Open</a></h1>
+    <h1><a href="{% url 'Nations:matches' %}">Ongoing</a></h1>
+    <h1><a href="{% url 'Nations:completed_matches' %}">Completed</a></h1>
+    <h1><a href="{% url 'Nations:archive' %}">Archived</a></h1>
+{% endblock %}

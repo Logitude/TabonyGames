@@ -1,0 +1,16 @@
+{% extends 'Nations/base.html' %}
+
+{% block content %}
+    <h1>Archived Completed Nations Matches</h1>
+    <div class="py-1">
+        {% if completed_matches %}
+            {% for match in completed_matches %}
+                {% include 'Nations/match_card.html' %}
+            {% endfor %}
+        {% else %}
+            <ul>
+                <li>None.</li>
+            </ul>
+        {% endif %}
+    </div>
+{% endblock %}

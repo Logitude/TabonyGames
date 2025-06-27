@@ -1,0 +1,21 @@
+<div class="card my-2" style="background-color: #fffcee;">
+    <div>
+        Match: <span class="d-inline fw-bold">{{ match.match_id }}</span>{% if not match.last_chat_seen %} 💬{% endif %}
+    </div>
+    <div>
+        Title: <span class="d-inline fw-bold">{{ match.title|escape }}</span>
+    </div>
+    <div>
+        Type: <span class="d-inline fw-bold">{{ match.match_type }}</span>{% if match.house_rules %}, ({{ match.house_rules }}){% endif %}
+    </div>
+    <div>
+        Players:
+        {% for player in match.players %}
+            <span class="d-inline fw-bold{% if player == match.current_player %} text-primary{% elif player in match.invited %} text-secondary{% endif %}">{{ player }}{% if player in match.invited %} (invited){% endif %}</span>{% if not forloop.last %},{% endif %}
+        {% endfor %}
+    </div>
+    <div>
+        Changed: <span id="match_time_{{ match.match_id }}" class="d-inline fw-bold">{{ match.new_turn_iso }}</span>
+    </div>
+    <a href="{% url 'Nations:match' pk=match.match_id %}" class="stretched-link"></a>
+</div>
