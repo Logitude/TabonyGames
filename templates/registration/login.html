@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% load widget_tweaks %}
+
+{% block content %}
+    <div class="d-grid gap-3">
+        {% if next %}
+            {% if user.is_authenticated %}
+                <p>Your account does not grant you access to that page.</p>
+            {% else %}
+                <p>You need to log in to be able to access that page.</p>
+            {% endif %}
+        {% endif %}
+        <h1>Log in</h1>
+        <div>
+            <form method="post" action="{% url 'login' %}">
+                {% csrf_token %}
+                <div class="d-grid gap-3">
+                    {% for field in form %}
+                        <div class="form-group">
+                            <div class="col-sm-6 px-0">
+                                <label for="id_{{ field.name }}">{{ field.label }}</label>
+                                {% render_field field class="form-control" %}
+                                {% for error_message in field.errors %}
+                                    <div>
+                                        <small id="id_{{ field.name }}" class="text-danger">{{ error_message }}</small>
+                                    </div>
+                                {% endfor %}
+                                {% if field.help_text %}
+                                    <div>
+                                        <small id="id_{{ field.name }}" class="text-mutex">{{ field.help_text }}</small>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endfor %}
+                    <div>
+                        <button class="btn btn-primary" type="submit">Log In</button>
+                    </div>
+                </div>
+                <input type="hidden" name="next" value="{{ next }}">
+            </form>
+        </div>
+        <div>
+            <p>
+                <a href="{% url 'password_reset' %}">Reset your password.</a>
+            </p>
+        </div>
+    </div>
+{% endblock %}
