@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+
+{% load widget_tweaks %}
+
+{% block content %}
+    <div class="d-grid gap-3">
+        <h1>Create a Tabony Games account</h1>
+        <div>
+            <form method="post" action="{% url 'signup' %}">
+                {% csrf_token %}
+                <div class="d-grid gap-3">
+                    {% for field in form %}
+                        <div class="form-group">
+                            <div class="col-sm-6 px-0">
+                                {% if field.field.widget.attrs.class == 'form-check-input' %}
+                                    {% render_field field %}
+                                    <label class="form-check-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                {% elif field.field.widget.attrs.class == 'form-select' %}
+                                    <div class="form-floating">
+                                        {% render_field field %}
+                                        <label class="form-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                    </div>
+                                {% else %}
+                                    <label class="form-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                    {% render_field field class="form-control" %}
+                                {% endif %}
+                                {% for error_message in field.errors %}
+                                    <div>
+                                        <small id="id_{{ field.name }}" class="text-danger">{{ error_message }}</small>
+                                    </div>
+                                {% endfor %}
+                                {% if field.help_text %}
+                                    <div>
+                                        <small id="id_{{ field.name }}" class="text-mutex">{{ field.help_text }}</small>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endfor %}
+                    <div>
+                        <button class="btn btn-primary" type="submit">Create Account</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endblock %}
