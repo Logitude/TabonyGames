@@ -1,0 +1,102 @@
+{% extends 'Nations/base.html' %}
+
+{% load static %}
+{% load widget_tweaks %}
+
+{% block content %}
+    <div class="d-grid gap-3">
+        <h1>Create Nations Match</h1>
+        <div>
+            <form method="post" action="{% url 'Nations:confirm_create' %}">
+                {% csrf_token %}
+                <h2>Please check your choices:</h2>
+                <p class="my-0">Title: <span class="fw-bold">{{ data.title }}</span></p>
+                <p class="my-0">Number of players: <span class="fw-bold">{{ data.player_count }}</span></p>
+                {% if data.player_count >= 1 %}
+                    {% if data.player1 %}
+                        <p class="my-0">Player 1: <span class="fw-bold">{{ data.player1 }}</span></p>
+                    {% else %}
+                        <p class="my-0">Player 1: <span class="fw-bold text-primary">Anyone will be able to join!</span></p>
+                    {% endif %}
+                {% endif %}
+                {% if data.player_count >= 2 %}
+                    {% if data.player2 %}
+                        <p class="my-0">Player 2: <span class="fw-bold">{{ data.player2 }}</span></p>
+                    {% else %}
+                        <p class="my-0">Player 2: <span class="fw-bold text-primary">Anyone will be able to join!</span></p>
+                    {% endif %}
+                {% endif %}
+                {% if data.player_count >= 3 %}
+                    {% if data.player3 %}
+                        <p class="my-0">Player 3: <span class="fw-bold">{{ data.player3 }}</span></p>
+                    {% else %}
+                        <p class="my-0">Player 3: <span class="fw-bold text-primary">Anyone will be able to join!</span></p>
+                    {% endif %}
+                {% endif %}
+                {% if data.player_count >= 4 %}
+                    {% if data.player4 %}
+                        <p class="my-0">Player 4: <span class="fw-bold">{{ data.player4 }}</span></p>
+                    {% else %}
+                        <p class="my-0">Player 4: <span class="fw-bold text-primary">Anyone will be able to join!</span></p>
+                    {% endif %}
+                {% endif %}
+                {% if data.player_count >= 5 %}
+                    {% if data.player5 %}
+                        <p class="my-0">Player 5: <span class="fw-bold">{{ data.player5 }}</span></p>
+                    {% else %}
+                        <p class="my-0">Player 5: <span class="fw-bold text-primary">Anyone will be able to join!</span></p>
+                    {% endif %}
+                {% endif %}
+                {% if data.player_count >= 6 %}
+                    {% if data.player6 %}
+                        <p class="my-0">Player 6: <span class="fw-bold">{{ data.player6 }}</span></p>
+                    {% else %}
+                        <p class="my-0">Player 6: <span class="fw-bold text-primary">Anyone will be able to join!</span></p>
+                    {% endif %}
+                {% endif %}
+                {% if data.growth_resources == -1 %}
+                    <p class="my-0">Players will <span class="fw-bold">choose their difficulty</span> when joining.</p>
+                {% else %}
+                    <p class="my-0">Difficulty for all players: <span class="fw-bold">
+                    {% if data.growth_resources == 1 %}
+                    Emperor
+                    {% elif data.growth_resources == 2 %}
+                    King
+                    {% elif data.growth_resources == 3 %}
+                    Prince
+                    {% elif data.growth_resources == 4 %}
+                    Chieftain
+                    {% else %}
+                    {{ data.growth_resources }}
+                    {% endif %}
+                    </span></p>
+                {% endif %}
+                {% if not data.extra_draft_nations and not data.resource_remainder_tiebreaker and not data.resource_remainder_tiebreaker and not data.weighted_card_draw and not data.korea_nerf and not data.lincoln_nerf %}
+                    <p class="my-0">No house rules are active. (<span class="fw-bold">Rules as written.</span>)</p>
+                {% endif %}
+                {% if data.extra_draft_nations %}
+                    {% if data.extra_draft_nations == -1 %}
+                        <p class="my-0"><span class="fw-bold">All nations</span> will be available for drafting.</p>
+                    {% else %}
+                        <p class="my-0">Number of nations more than players available for drafting: <span class="fw-bold">{{ data.extra_draft_nations }}</span></p>
+                    {% endif %}
+                {% endif %}
+                {% if data.resource_remainder_tiebreaker %}
+                    <p class="my-0">Use <span class="fw-bold">resource remainder</span> as the first <span class="fw-bold">tiebreaker</span>.</p>
+                {% endif %}
+                {% if data.weighted_card_draw %}
+                    <p class="my-0">Use <span class="fw-bold">weighted card draw</span> for refilling the progress board.</p>
+                {% endif %}
+                {% if data.korea_nerf %}
+                    <p class="my-0"><span class="fw-bold">Korea</span>'s starting special will be <span class="fw-bold">nerfed</span>.</p>
+                {% endif %}
+                {% if data.lincoln_nerf %}
+                    <p class="my-0">The <span class="fw-bold">nerfed Abraham Lincoln</span> card will be substituted.</p>
+                {% endif %}
+                <div>
+                    <button class="btn btn-primary" type="submit">Create Match</button>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endblock %}
