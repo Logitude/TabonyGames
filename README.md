@@ -21,7 +21,8 @@ Website for the game(s) implemented by Charles J. Tabony (Logitude)
 
 5. Create the initial database:
 
-    `DJANGO_LOCAL_RUN=TRUE python manage.py migrate`  
+    `DJANGO_LOCAL_RUN=TRUE python manage.py migrate`
+
     `DJANGO_LOCAL_RUN=TRUE python manage.py createsuperuser` (Remember your username and password.)
 
 6. Run `daphne` to start the server. `daphne` is listed in the `requirements.txt`.
