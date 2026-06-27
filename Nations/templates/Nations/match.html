@@ -1836,9 +1836,9 @@
                 const saved_lineWidth = draw.lineWidth;
                 const saved_strokeStyle = draw.strokeStyle;
                 const highlight_box = [box[0] - 1, box[1] - 1, box[2] + 2, box[3] + 2];
-                draw.lineWidth = 2;
-                draw.strokeStyle = '#0000df';
-                draw.setLineDash([8, 3]);
+                draw.lineWidth = 4;
+                draw.strokeStyle = '#4040ff';
+                draw.setLineDash([6, 3]);
                 stroke_rect_and_update_height(game_canvas, highlight_box);
                 draw.lineWidth = saved_lineWidth;
                 draw.strokeStyle = saved_strokeStyle;
