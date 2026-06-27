@@ -3086,7 +3086,7 @@
                         option_buttons[option] = {
                             'box': [box[0], box[1], 0, 56],
                             'margin': 20,
-                            'color': '#f0f0f0',
+                            'color': (active_player && option == 'Confirm and complete the turn now') ? '#90f090' : '#f0f0f0',
                             'text_color': text_color,
                             'font_size': font_size,
                             'text': option,
