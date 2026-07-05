@@ -3,15 +3,17 @@ from django.shortcuts import get_object_or_404, render, redirect
 from django.contrib.auth.decorators import login_required
 from django.utils.timezone import make_aware
 from django.core.exceptions import ObjectDoesNotExist
+from django.http import HttpResponse
 
 from users.models import User, get_deleted_user
-from .models import Match, MatchPlayer, NationsPreferences, NationsChat
+from .models import Match, MatchPlayer, Tournament, NationsPreferences, NationsChat
 from .forms import CreateMatchForm
 
 from . import nations
 
 import json
 import datetime
+import csv
 
 def number_of_turns(user):
     if not user.is_authenticated:
@@ -340,3 +342,81 @@ def match(request, pk):
         'player_preferences': preferences,
         'abbrs': nations.abbr.abbrs
     })
+
+def tournament_status(request, pk):
+    tournament = get_object_or_404(Tournament, pk=pk)
+    response = HttpResponse(content_type='text/csv', headers={'Content-Disposition': f'attachment; filename=Tournament_{pk}_status.csv'})
+    csv_writer = csv.writer(response)
+    csv_writer.writerow((
+        'Match ID',
+        'Title',
+        'Created',
+        'Changed',
+        'Player Count',
+        'Growth Resources',
+        'Extra Draft',
+        'Resource Tiebreaker',
+        'Card Draw',
+        'Korea Nerf',
+        'Lincoln Nerf',
+        'Game Over',
+        'Current Player Order',
+        'Round',
+        'P1 Name',
+        'P1 Growth Resources',
+        'P1 Nation',
+        'P1 Score',
+        'P1 Remainder',
+        'P2 Name',
+        'P2 Growth Resources',
+        'P2 Nation',
+        'P2 Score',
+        'P2 Remainder',
+        'P3 Name',
+        'P3 Growth Resources',
+        'P3 Nation',
+        'P3 Score',
+        'P3 Remainder',
+        'P4 Name',
+        'P4 Growth Resources',
+        'P4 Nation',
+        'P4 Score',
+        'P4 Remainder',
+        'P5 Name',
+        'P5 Growth Resources',
+        'P5 Nation',
+        'P5 Score',
+        'P5 Remainder',
+        'P6 Name',
+        'P6 Growth Resources',
+        'P6 Nation',
+        'P6 Score',
+        'P6 Remainder'
+    ))
+    for match in tournament.matches.order_by('pk'):
+        row = [
+            str(match.match_id),
+            str(match.title),
+            match.created.isoformat(),
+            match.new_turn.isoformat(),
+            str(match.player_count),
+            str(match.growth_resources),
+            str(match.extra_draft_nations),
+            str(match.resource_remainder_tiebreaker).upper(),
+            str(match.card_draw_limits or match.weighted_card_draw).upper(),
+            str(match.korea_nerf).upper(),
+            str(match.lincoln_nerf).upper(),
+            str(match.game_over).upper(),
+            str(match.current_player_order),
+            str(match.current_round)
+        ]
+        for player in match.players.order_by('pk'):
+            row += [
+                str(player.player.username),
+                str(player.growth_resources if match.growth_resources < 0 else match.growth_resources),
+                str(player.nation),
+                str(player.score),
+                str(player.resource_remainder)
+            ]
+        csv_writer.writerow(row)
+    return response
