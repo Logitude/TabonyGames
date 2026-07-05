@@ -397,8 +397,8 @@ def tournament_status(request, pk):
         row = [
             str(match.match_id),
             str(match.title),
-            match.created.isoformat(),
-            match.new_turn.isoformat(),
+            match.created.isoformat(timespec='seconds'),
+            match.new_turn.isoformat(timespec='seconds'),
             str(match.player_count),
             str(match.growth_resources),
             str(match.extra_draft_nations),
