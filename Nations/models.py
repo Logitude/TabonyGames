@@ -3,6 +3,13 @@ from django.db.models.functions import Now
 
 from users.models import User, get_deleted_user, get_deleted_user_id
 
+class Tournament(models.Model):
+    title = models.CharField(max_length=255, default='', blank=True)
+    organizer = models.ForeignKey(User, on_delete=models.SET(get_deleted_user))
+
+    def __str__(self):
+        return f'Nations tournament "{self.title}", run by {self.organizer.username}'
+
 class Match(models.Model):
     match_id = models.BigAutoField(primary_key=True)
     created = models.DateTimeField(auto_now_add=True, db_default=Now())
@@ -18,7 +25,10 @@ class Match(models.Model):
     korea_nerf = models.BooleanField(default=False)
     lincoln_nerf = models.BooleanField(default=False)
     current_player = models.ForeignKey(User, on_delete=models.SET(get_deleted_user), default=get_deleted_user_id)
+    current_player_order = models.CharField(max_length=255, default='', blank=True)
+    current_round = models.IntegerField(default=0)
     game_over = models.BooleanField(default=False)
+    tournament = models.ForeignKey(Tournament, null=True, on_delete=models.SET_NULL, related_name='matches')
 
     def __str__(self):
         return f'Nations match {self.match_id}'
@@ -28,6 +38,9 @@ class MatchPlayer(models.Model):
     player = models.ForeignKey(User, on_delete=models.CASCADE)
     growth_resources = models.IntegerField(default=2)
     accepted = models.BooleanField(default=True)
+    nation = models.CharField(max_length=255, default='', blank=True)
+    score = models.IntegerField(default=0)
+    resource_remainder = models.IntegerField(default=0)
     last_chat = models.IntegerField(default=0)
     notes = models.CharField(max_length=4000, default='', blank=True)
 
@@ -36,7 +49,7 @@ class MatchPlayer(models.Model):
 
 class NationsChat(models.Model):
     match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name='chats')
-    player = models.ForeignKey(User, on_delete=models.CASCADE)
+    player = models.ForeignKey(User, on_delete=models.SET(get_deleted_user))
     created = models.DateTimeField(auto_now_add=True)
     message = models.CharField(max_length=255)
 
