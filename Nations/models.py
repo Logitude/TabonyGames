@@ -8,7 +8,7 @@ class Tournament(models.Model):
     organizer = models.ForeignKey(User, on_delete=models.SET(get_deleted_user))
 
     def __str__(self):
-        return f'Nations tournament "{self.title}", run by {self.organizer.username}'
+        return f'Nations tournament "{self.title}" run by {self.organizer.username}'
 
 class Match(models.Model):
     match_id = models.BigAutoField(primary_key=True)
