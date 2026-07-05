@@ -28,7 +28,7 @@ class Match(models.Model):
     current_player_order = models.CharField(max_length=255, default='', blank=True)
     current_round = models.IntegerField(default=0)
     game_over = models.BooleanField(default=False)
-    tournament = models.ForeignKey(Tournament, null=True, on_delete=models.SET_NULL, related_name='matches')
+    tournament = models.ForeignKey(Tournament, null=True, blank=True, on_delete=models.SET_NULL, related_name='matches')
 
     def __str__(self):
         return f'Nations match {self.match_id}'

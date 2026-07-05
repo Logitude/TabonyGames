@@ -178,13 +178,41 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             except User.DoesNotExist:
                 user = get_deleted_user()
         match.current_player = user
+        if self.match_info.state is not None:
+            match.current_player_order = ' '.join(self.match_info.state['player_order'])
+            match.current_round = self.match_info.state['round']
         match.game_over = self.match_info.game_over
         if self.match_info.prev_player != self.match_info.current_player:
             match.new_turn = Now()
         match.save()
 
+    @database_sync_to_async
+    def save_player_info_to_db(self, username):
+        try:
+            user = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return
+        try:
+            match = Match.objects.get(match_id=self.match_info.match_id)
+        except Match.DoesNotExist:
+            return
+        try:
+            match_player = match.players.get(player=user)
+        except MatchPlayer.DoesNotExist:
+            return
+        player_state = self.match_info.state['players'][username]
+        nation = player_state['nation']
+        if nation:
+            match_player.nation = nation
+            match_player.score = player_state['score']
+            match_player.resource_remainder = player_state['resource_remainder']
+            match_player.save()
+
     async def save_match(self):
         await self.save_match_to_db()
+        if self.match_info.state is not None:
+            for player in self.match_info.players:
+                await self.save_player_info_to_db(player)
 
     @database_sync_to_async
     def get_growth_resources_from_db(self, username):
