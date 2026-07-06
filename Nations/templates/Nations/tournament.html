@@ -1,0 +1,19 @@
+{% extends 'Nations/base.html' %}
+
+{% block content %}
+    <h1><span class="d-inline fw-bold">{{ tournament.title }}</span></h1>
+    <h1>Organized by: <span class="d-inline fw-bold">{{ tournament.organizer }}</span></h1>
+    <h1><a href="{% url 'Nations:tournament_csv' pk=tournament.pk %}">Status CSV</a></h1>
+    <h1>Match Listing:</h1>
+    <div class="py-1">
+        {% if matches %}
+            {% for match in matches %}
+                {% include 'Nations/match_card.html' %}
+            {% endfor %}
+        {% else %}
+            <ul>
+                <li>No matches (yet).</li>
+            </ul>
+        {% endif %}
+    </div>
+{% endblock %}

@@ -343,7 +343,25 @@ def match(request, pk):
         'abbrs': nations.abbr.abbrs
     })
 
-def tournament_status(request, pk):
+def tournaments(request):
+    tournaments = Tournament.objects.order_by('pk')
+    return render(request, 'Nations/tournaments.html', {
+        'IN_PRODUCTION': settings.IN_PRODUCTION,
+        'turns': number_of_turns(request.user),
+        'tournaments': tournaments
+    })
+
+def tournament(request, pk):
+    tournament = get_object_or_404(Tournament, pk=pk)
+    matches = [MatchProperties(match) for match in tournament.matches.order_by('match_id')]
+    return render(request, 'Nations/tournament.html', {
+        'IN_PRODUCTION': settings.IN_PRODUCTION,
+        'turns': number_of_turns(request.user),
+        'tournament': tournament,
+        'matches': matches
+    })
+
+def tournament_csv(request, pk):
     tournament = get_object_or_404(Tournament, pk=pk)
     response = HttpResponse(content_type='text/csv', headers={'Content-Disposition': f'attachment; filename=Tournament_{pk}_status.csv'})
     csv_writer = csv.writer(response)
@@ -393,7 +411,7 @@ def tournament_status(request, pk):
         'P6 Score',
         'P6 Remainder'
     ))
-    for match in tournament.matches.order_by('pk'):
+    for match in tournament.matches.order_by('match_id'):
         row = [
             str(match.match_id),
             str(match.title),

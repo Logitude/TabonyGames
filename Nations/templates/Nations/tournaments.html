@@ -1,0 +1,27 @@
+{% extends 'Nations/base.html' %}
+
+{% block content %}
+    <h1>Nations Tournaments</h1>
+    <div class="py-1">
+        {% if tournaments %}
+            {% for tournament in tournaments %}
+                <div class="card my-2" style="background-color: #fad0ff;">
+                    <div>
+                        Tournament ID: <span class="d-inline fw-bold">{{ tournament.pk }}</span>
+                    </div>
+                    <div>
+                        Title: <span class="d-inline fw-bold">{{ tournament.title|escape }}</span>
+                    </div>
+                    <div>
+                        Organizer: <span class="d-inline fw-bold">{{ tournament.organizer }}</span>
+                    </div>
+                    <a href="{% url 'Nations:tournament' pk=tournament.pk %}" class="stretched-link"></a>
+                </div>
+            {% endfor %}
+        {% else %}
+            <ul>
+                <li>None.</li>
+            </ul>
+        {% endif %}
+    </div>
+{% endblock %}

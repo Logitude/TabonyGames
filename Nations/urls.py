@@ -17,5 +17,7 @@ urlpatterns = [
     path('archive/completed/', views.archive_completed, name='archive_completed'),
     path('archive/mine/', views.archive_mine, name='archive_mine'),
     path('<int:pk>/', views.match, name='match'),
-    path('tournament/<int:pk>/status/', views.tournament_status, name='tournament_status'),
+    path('tournaments/', views.tournaments, name='tournaments'),
+    path('tournaments/<int:pk>/', views.tournament, name='tournament'),
+    path('tournaments/<int:pk>/csv/', views.tournament_csv, name='tournament_csv'),
 ]
