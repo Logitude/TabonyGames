@@ -7,10 +7,10 @@
             {% for tournament in tournaments %}
                 <div class="card my-2" style="background-color: #fad0ff;">
                     <div>
-                        Tournament ID: <span class="d-inline fw-bold">{{ tournament.pk }}</span>
+                        Tournament #{{ tournament.pk }}:
                     </div>
                     <div>
-                        Title: <span class="d-inline fw-bold">{{ tournament.title|escape }}</span>
+                        <span class="d-inline fw-bold">{{ tournament.title|escape }}</span>
                     </div>
                     <div>
                         Organizer: <span class="d-inline fw-bold">{{ tournament.organizer }}</span>
