@@ -19,6 +19,7 @@ import json
 import datetime
 import threading
 import queue
+import os
 
 class TerminatePlay(Exception):
     pass
@@ -420,10 +421,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         self.match_info.current_player = self.match_info.state['next_move_player']
         self.match_info.game_over = self.match_info.state['game_over']
         await self.save_match()
-        current_player_user = await self.get_user_from_db(self.match_info.current_player)
-        await self.channel_layer.group_send(f'nations_notifications_{current_player_user.pk}', {'type': 'new_turn'})
-        event_loop = asyncio.get_event_loop()
-        event_loop.create_task(self.notify(self.match_info.current_player))
+        await self.notify()
 
     async def make_move(self, move):
         if not self.thread_state.is_running():
@@ -488,12 +486,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             group_message = {'type': 'state_change_message', 'move': move}
             await self.channel_layer.group_send(self.match_group_name, group_message)
             if self.match_info.prev_player != self.match_info.current_player:
-                prev_player_user = await self.get_user_from_db(self.match_info.prev_player)
-                current_player_user = await self.get_user_from_db(self.match_info.current_player)
-                await self.channel_layer.group_send(f'nations_notifications_{prev_player_user.pk}', {'type': 'new_turn'})
-                await self.channel_layer.group_send(f'nations_notifications_{current_player_user.pk}', {'type': 'new_turn'})
-                event_loop = asyncio.get_event_loop()
-                event_loop.create_task(self.notify(self.match_info.current_player))
+                await self.notify()
 
     async def received_chat(self, chat):
         match = await self.get_match_from_db()
@@ -598,8 +591,19 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         }
         await self.send_json(message)
 
+    async def notify(self):
+        if self.match_info.prev_player is not None:
+            prev_player_user = await self.get_user_from_db(self.match_info.prev_player)
+            await self.channel_layer.group_send(f'nations_notifications_{prev_player_user.pk}', {'type': 'new_turn'})
+        current_player_user = await self.get_user_from_db(self.match_info.current_player)
+        await self.channel_layer.group_send(f'nations_notifications_{current_player_user.pk}', {'type': 'new_turn'})
+        event_loop = asyncio.get_event_loop()
+        event_loop.create_task(self.notify_user(self.match_info.current_player))
+        if self.match_info.game_over:
+            event_loop.create_task(self.save_replay())
+
     @database_sync_to_async
-    def notify(self, username):
+    def notify_user(self, username):
         try:
             user = User.objects.get(username=username)
         except User.DoesNotExist:
@@ -649,3 +653,19 @@ It's your turn in https://{hostname}{match_url}
                 [user.email],
                 fail_silently=True
             )
+
+    @database_sync_to_async
+    def save_replay(self):
+        try:
+            match = Match.objects.get(match_id=self.match_info.match_id)
+        except Match.DoesNotExist:
+            return
+        filename = f'match{match.match_id:08d}.replay'
+        if settings.IN_PRODUCTION:
+            directory = settings.BASE_DIR.parent.parent / 'completed_matches' / 'Nations'
+        else:
+            directory = settings.BASE_DIR / 'local' / 'completed_matches' / 'Nations'
+        replay = match.replay.replace('\r', '').rstrip('\n') + '\n'
+        os.makedirs(directory, exist_ok=True)
+        with open(directory / filename, 'w', encoding='utf-8', newline='\n') as match_replay_file:
+            match_replay_file.write(replay)
