@@ -20,4 +20,5 @@ urlpatterns = [
     path('tournaments/', views.tournaments, name='tournaments'),
     path('tournaments/<int:pk>/', views.tournament, name='tournament'),
     path('tournaments/<int:pk>/csv/', views.tournament_csv, name='tournament_csv'),
+    path('stats/tar/', views.completed_matches_tar, name='completed_matches_tar'),
 ]

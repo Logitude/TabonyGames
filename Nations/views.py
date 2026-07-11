@@ -14,6 +14,8 @@ from . import nations
 import json
 import datetime
 import csv
+import tarfile
+import io
 
 def number_of_turns(user):
     if not user.is_authenticated:
@@ -437,4 +439,16 @@ def tournament_csv(request, pk):
                 str(player.resource_remainder)
             ]
         csv_writer.writerow(row)
+    return response
+
+def completed_matches_tar(request):
+    matches = Match.objects.filter(game_over=True).order_by('match_id')
+    filename = f'completed_matches_{len(matches)}.tar.gz'
+    response = HttpResponse(content_type='application/gzip', headers={'Content-Disposition': f'attachment; filename={filename}'})
+    tar = tarfile.open(filename, 'w|gz', fileobj=response)
+    for match in matches:
+        replay_buffer = io.BytesIO(match.replay.encode())
+        tarinfo = tarfile.TarInfo(f'match{match.match_id:08d}.replay')
+        tarinfo.size = replay_buffer.getbuffer().nbytes
+        tar.addfile(tarinfo, fileobj=replay_buffer)
     return response
