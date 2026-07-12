@@ -19,7 +19,6 @@ import json
 import datetime
 import threading
 import queue
-import os
 
 class TerminatePlay(Exception):
     pass
@@ -599,8 +598,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_send(f'nations_notifications_{current_player_user.pk}', {'type': 'new_turn'})
         event_loop = asyncio.get_event_loop()
         event_loop.create_task(self.notify_user(self.match_info.current_player))
-        if self.match_info.game_over:
-            event_loop.create_task(self.save_replay())
 
     @database_sync_to_async
     def notify_user(self, username):
@@ -653,19 +650,3 @@ It's your turn in https://{hostname}{match_url}
                 [user.email],
                 fail_silently=True
             )
-
-    @database_sync_to_async
-    def save_replay(self):
-        try:
-            match = Match.objects.get(match_id=self.match_info.match_id)
-        except Match.DoesNotExist:
-            return
-        filename = f'match{match.match_id:08d}.replay'
-        if settings.IN_PRODUCTION:
-            directory = settings.BASE_DIR.parent.parent / 'completed_matches' / 'Nations'
-        else:
-            directory = settings.BASE_DIR / 'local' / 'completed_matches' / 'Nations'
-        replay = match.replay.replace('\r', '').rstrip('\n') + '\n'
-        os.makedirs(directory, exist_ok=True)
-        with open(directory / filename, 'w', encoding='utf-8', newline='\n') as match_replay_file:
-            match_replay_file.write(replay)

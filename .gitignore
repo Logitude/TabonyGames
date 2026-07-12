@@ -2,7 +2,6 @@
 __pycache__/
 local/secrets.ini
 local/db.sqlite3
-local/completed_matches/
 Games/static/
 Nations/static/
 Nations/nations
