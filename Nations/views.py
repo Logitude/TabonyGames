@@ -441,7 +441,7 @@ def tournament_csv(request, pk):
         csv_writer.writerow(row)
     return response
 
-def completed_matches_tar(request):
+def completed_matches_replays(request):
     matches = Match.objects.filter(game_over=True).order_by('match_id')
     filename = f'completed_matches_{len(matches)}.tar.gz'
     response = HttpResponse(content_type='application/gzip', headers={'Content-Disposition': f'attachment; filename={filename}'})
