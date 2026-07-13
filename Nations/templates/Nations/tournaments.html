@@ -2,10 +2,11 @@
 
 {% block content %}
     <h1>Nations Tournaments</h1>
+    <p>There will be a way to create and manage tournaments in the future.</p>
     <div class="py-1">
         {% if tournaments %}
             {% for tournament in tournaments %}
-                <div class="card my-2" style="background-color: #fad0ff;">
+                <div class="card my-3" style="background-color: #fae0ff;">
                     <div>
                         Tournament #{{ tournament.pk }}
                     </div>
