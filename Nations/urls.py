@@ -20,5 +20,6 @@ urlpatterns = [
     path('tournaments/', views.tournaments, name='tournaments'),
     path('tournaments/<int:pk>/', views.tournament, name='tournament'),
     path('tournaments/<int:pk>/csv/', views.tournament_csv, name='tournament_csv'),
+    path('stats/', views.stats, name='stats'),
     path('stats/replays/', views.completed_matches_replays, name='completed_matches_replays'),
 ]

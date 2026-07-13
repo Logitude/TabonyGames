@@ -441,6 +441,12 @@ def tournament_csv(request, pk):
         csv_writer.writerow(row)
     return response
 
+def stats(request):
+    return render(request, 'Nations/stats.html', {
+        'IN_PRODUCTION': settings.IN_PRODUCTION,
+        'turns': number_of_turns(request.user)
+    })
+
 def completed_matches_replays(request):
     matches = Match.objects.filter(game_over=True).order_by('match_id')
     filename = f'completed_matches_{len(matches)}.tar.gz'
