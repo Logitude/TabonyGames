@@ -1,6 +1,10 @@
 # TabonyGames
 Website for the game(s) implemented by Charles J. Tabony (Logitude)
 
+## Website
+
+This repo is deployed at https://games.tabony.net
+
 ## Steps to run locally
 
 1. This repo requires the nations repo: https://github.com/Logitude/nations to be either cloned into or linked into `Nations/nations`.
