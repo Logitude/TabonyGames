@@ -114,7 +114,7 @@ class MatchProperties:
         self.house_rules = ', '.join(house_rules)
         players = match.players.order_by('pk')
         self.players = [player.player.username for player in players]
-        self.current_player = match.current_player.username if match.replay and not match.game_over else None
+        self.current_player = match.current_player.username if match.replay.strip() and not match.game_over else None
         self.invited = [player.player.username for player in players if not player.accepted]
         self.full = len(players) == match.player_count
         self.game_over = match.game_over
