@@ -2,7 +2,7 @@
 
 {% block content %}
     <h1>Nations Tournaments</h1>
-    <p>There will be a way to create and manage tournaments in the future.</p>
+    <h1><a href="{% url 'Nations:create_tournament' %}">Create</a></h1>
     <div class="py-1">
         {% if tournaments %}
             {% for tournament in tournaments %}

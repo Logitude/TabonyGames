@@ -7,7 +7,7 @@ from django.http import HttpResponse
 
 from users.models import User, get_deleted_user
 from .models import Match, MatchPlayer, Tournament, NationsPreferences, NationsChat
-from .forms import CreateMatchForm
+from .forms import CreateMatchForm, CreateTournamentForm, ManageTournamentForm
 
 from . import nations
 
@@ -363,6 +363,52 @@ def tournament(request, pk):
         'matches': matches
     })
 
+@login_required
+def create_tournament(request):
+    if request.method == 'POST':
+        form = CreateTournamentForm(request.POST)
+        if form.is_valid():
+            tournament = Tournament.objects.create(
+                title=form.cleaned_data.get('title'),
+                organizer=request.user
+            )
+            return redirect('Nations:tournaments')
+    else:
+        form = CreateTournamentForm()
+    return render(request, 'Nations/tournament_create.html', {
+        'IN_PRODUCTION': settings.IN_PRODUCTION,
+        'turns': number_of_turns(request.user),
+        'form': form
+    })
+
+@login_required
+def manage_tournament(request, pk):
+    tournament = get_object_or_404(Tournament, pk=pk)
+    authorized = request.user == tournament.organizer or request.user.is_superuser
+    if request.method == 'POST' and authorized:
+        form = ManageTournamentForm(request.POST, instance=tournament)
+        if form.is_valid():
+            tournament.title = form.cleaned_data.get('title')
+            tournament.save()
+            for match_id in form.cleaned_data.get('add_matches'):
+                match = Match.objects.get(match_id=match_id)
+                match.tournament = tournament
+                match.save()
+            for match_id in form.cleaned_data.get('remove_matches'):
+                match = Match.objects.get(match_id=match_id)
+                match.tournament = None
+                match.save()
+            return redirect('Nations:tournament', pk=pk)
+    else:
+        form = ManageTournamentForm(instance=tournament)
+    return render(request, 'Nations/tournament_manage.html', {
+        'IN_PRODUCTION': settings.IN_PRODUCTION,
+        'turns': number_of_turns(request.user),
+        'form': form,
+        'tournament': tournament,
+        'authorized': authorized
+    })
+
 def tournament_csv(request, pk):
     tournament = get_object_or_404(Tournament, pk=pk)
     response = HttpResponse(content_type='text/csv', headers={'Content-Disposition': f'attachment; filename=Tournament_{pk}_status.csv'})
@@ -447,6 +493,7 @@ def stats(request):
         'turns': number_of_turns(request.user)
     })
 
+@login_required
 def completed_matches_replays(request):
     matches = Match.objects.filter(game_over=True).order_by('match_id')
     filename = f'completed_matches_{len(matches)}.tar.gz'

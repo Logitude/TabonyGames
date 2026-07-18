@@ -1,6 +1,8 @@
 from django import forms
 from users.models import User
-from .models import NationsPreferences, color_choices
+from .models import Match, Tournament, NationsPreferences, color_choices
+
+import re
 
 class CreateMatchForm(forms.Form):
     title = forms.CharField(label='Title', required=False, max_length=255, widget=forms.TextInput(attrs={'onkeydown': 'return event.key != \'Enter\';'}))
@@ -89,6 +91,44 @@ class CreateMatchForm(forms.Form):
             except (ValueError, TypeError):
                 self.add_error(field, 'Invalid choice.')
         return self.cleaned_data
+
+class CreateTournamentForm(forms.Form):
+    title = forms.CharField(label='Title', required=False, max_length=255, widget=forms.TextInput(attrs={'onkeydown': 'return event.key != \'Enter\';'}))
+
+class ManageTournamentForm(forms.ModelForm):
+    title = forms.CharField(label='New Title', required=False, max_length=255, widget=forms.TextInput(attrs={'onkeydown': 'return event.key != \'Enter\';'}))
+    add_matches = forms.CharField(label='Matches to Add', required=False, widget=forms.Textarea())
+    remove_matches = forms.CharField(label='Matches to Remove', required=False, widget=forms.Textarea())
+
+    class Meta:
+        model = Tournament
+        fields = ['title', 'add_matches', 'remove_matches']
+
+    def clean(self):
+        for field in ('add_matches', 'remove_matches'):
+            try:
+                match_ids = re.findall(r'\d+', self.cleaned_data[field])
+            except (ValueError, TypeError):
+                self.add_error(field, 'Invalid input.')
+                continue
+            try:
+                match_ids = [int(match_id) for match_id in match_ids]
+            except (ValueError, TypeError):
+                self.add_error(field, 'Invalid input.')
+                continue
+            for match_id in match_ids:
+                try:
+                    match = Match.objects.get(match_id=match_id)
+                except Match.DoesNotExist:
+                    self.add_error(field, f'Invalid match ID: {match_id}')
+                    break
+                if field == 'add_matches' and match.tournament is not None:
+                    self.add_error(field, f'Match already included in a tournament: {match_id}')
+                    break
+                if field == 'remove_matches' and (match.tournament is None or match.tournament != self.instance):
+                    self.add_error(field, f'Match not included in this tournament: {match_id}')
+                    break
+            self.cleaned_data[field] = match_ids
 
 class NationsPreferencesForm(forms.ModelForm):
     class Meta:

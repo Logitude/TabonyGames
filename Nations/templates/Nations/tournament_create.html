@@ -1,0 +1,54 @@
+{% extends 'Nations/base.html' %}
+
+{% load widget_tweaks %}
+
+{% block content %}
+    <div class="d-grid gap-3">
+        <h1>Create Nations Tournament</h1>
+        <p>For now, there is no form to create tournament matches directly. Just create the tournament and then add existing matches using the management form.</p>
+        <div>
+            <form method="post" action="{% url 'Nations:create_tournament' %}">
+                {% csrf_token %}
+                <div class="d-grid gap-3">
+                    {% for field in form %}
+                        <div class="form-group">
+                            {% if field.field.widget.attrs.class == 'form-check-input' %}
+                                <div class="col-9 px-0">
+                                    <div class="row">
+                                        {% render_field field %}
+                                        <label class="form-check-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                    </div>
+                                </div>
+                            {% elif field.field.widget.attrs.class == 'form-select' %}
+                                <div class="col-6 px-0">
+                                    <div class="form-floating">
+                                        {% render_field field %}
+                                        <label class="form-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                    </div>
+                                </div>
+                            {% else %}
+                                <div class="col-6 px-0">
+                                    <label class="form-label" for="id_{{ field.name }}">{{ field.label }}</label>
+                                    {% render_field field class="form-control" %}
+                                </div>
+                            {% endif %}
+                            {% for error_message in field.errors %}
+                                <div>
+                                    <small id="id_{{ field.name }}" class="text-danger">{{ error_message }}</small>
+                                </div>
+                            {% endfor %}
+                            {% if field.help_text %}
+                                <div>
+                                    <small id="id_{{ field.name }}" class="text-mutex">{{ field.help_text }}</small>
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endfor %}
+                    <div>
+                        <button class="btn btn-primary" type="submit">Create Tournament</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endblock %}

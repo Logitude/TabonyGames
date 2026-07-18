@@ -4,6 +4,7 @@
     <h1><span class="d-inline fw-bold">{{ tournament.title }}</span></h1>
     <h1>Organized by: <span class="d-inline fw-bold">{{ tournament.organizer }}</span></h1>
     <h1><a href="{% url 'Nations:tournament_csv' pk=tournament.pk %}">Status CSV</a></h1>
+    <h1><a href="{% url 'Nations:manage_tournament' pk=tournament.pk %}">Manage</a></h1>
     <h1>Match Listing:</h1>
     <div class="py-1">
         {% if matches %}
