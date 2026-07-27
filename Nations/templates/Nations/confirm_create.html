@@ -4,10 +4,10 @@
 {% load widget_tweaks %}
 
 {% block content %}
-    <div class="d-grid gap-3">
+    <div class="d-grid gap-3" id="page-content-div">
         <h1>Create Nations Match</h1>
         <div>
-            <form method="post" action="{% url 'Nations:confirm_create' %}">
+            <form id="create-form" method="post" action="{% url 'Nations:confirm_create' %}">
                 {% csrf_token %}
                 <h2>Please check your choices:</h2>
                 <p class="my-0">Title: <span class="fw-bold">{{ data.title }}</span></p>
@@ -94,9 +94,24 @@
                     <p class="my-0">The <span class="fw-bold">nerfed Abraham Lincoln</span> card will be substituted.</p>
                 {% endif %}
                 <div>
-                    <button class="btn btn-primary" type="submit">Create Match</button>
+                    <button class="btn btn-primary" id="create-button" type="submit">Create Match</button>
                 </div>
             </form>
         </div>
     </div>
+    <script>
+        document.getElementById('create-form').addEventListener('submit', (event) =>
+            {
+                document.getElementById('create-button').disabled = true;
+                var page_div = document.getElementById('page-content-div');
+                var message_div = document.createElement('div');
+                var message_p = document.createElement('p');
+                var message_text = document.createTextNode('Form submitted. If you are not redirected, first check whether a match has been created. Only if not, try creating again.');
+                page_div.appendChild(message_div);
+                message_div.appendChild(message_p);
+                message_p.appendChild(message_text);
+                return true;
+            }
+        );
+    </script>
 {% endblock %}
