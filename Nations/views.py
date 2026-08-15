@@ -346,7 +346,7 @@ def match(request, pk):
     })
 
 def tournaments(request):
-    tournaments = Tournament.objects.order_by('pk')
+    tournaments = Tournament.objects.order_by('-pk')
     return render(request, 'Nations/tournaments.html', {
         'IN_PRODUCTION': settings.IN_PRODUCTION,
         'turns': number_of_turns(request.user),
