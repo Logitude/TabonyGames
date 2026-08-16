@@ -164,7 +164,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         self.match_info.korea_nerf = match.korea_nerf
         self.match_info.lincoln_nerf = match.lincoln_nerf
         self.match_info.players = players
-        self.match_info.replay = match.replay
+        self.match_info.replay = match.replay.strip()
         self.match_info.current_player = current_player
         self.match_info.game_over = match.game_over
         self.match_info.player_growth_resources = {player: await self.get_growth_resources_from_db(player) for player in players}
