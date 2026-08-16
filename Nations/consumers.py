@@ -78,7 +78,7 @@ class MatchInfo:
         self.log = None
         self.state = None
 
-    async def rules(self):
+    def rules(self):
         rules = {'growth_resources': self.growth_resources}
         if self.extra_draft_nations != 0:
             rules['extra_draft_nations'] = self.extra_draft_nations
@@ -94,6 +94,12 @@ class ThreadState:
         self.match_thread = None
         self.move_queue = None
         self.state_queue = None
+
+    def start(self, f):
+        self.move_queue = queue.SimpleQueue()
+        self.state_queue = queue.SimpleQueue()
+        self.match_thread = threading.Thread(target=f)
+        self.match_thread.start()
 
     def is_running(self):
         return self.match_thread is not None and self.match_thread.is_alive()
@@ -158,7 +164,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         self.match_info.korea_nerf = match.korea_nerf
         self.match_info.lincoln_nerf = match.lincoln_nerf
         self.match_info.players = players
-        self.match_info.replay = match.replay.replace('\r', '').rstrip('\n')
+        self.match_info.replay = match.replay
         self.match_info.current_player = current_player
         self.match_info.game_over = match.game_over
         self.match_info.player_growth_resources = {player: await self.get_growth_resources_from_db(player) for player in players}
@@ -169,7 +175,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             match = Match.objects.get(match_id=self.match_info.match_id)
         except Match.DoesNotExist:
             return
-        match.replay = self.match_info.replay + '\n'
+        match.replay = self.match_info.replay
         if self.match_info.game_over:
             user = get_deleted_user()
         else:
@@ -349,8 +355,8 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
 
     def play_match(self):
         def report_state(nations_match):
-            replay = nations_match.get_replay().replace('\r', '').rstrip('\n')
-            log = nations_match.get_log().replace('\r', '').rstrip('\n')
+            replay = nations_match.get_replay()
+            log = nations_match.get_log()
             state = nations_match.get_state()
             self.thread_state.state_queue.put((replay, log, state))
 
@@ -395,10 +401,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         state = self.match_info.state
         if (replay and not state) or (replay and state and not self.thread_state.is_running()):
             if not self.thread_state.is_running():
-                self.thread_state.move_queue = queue.SimpleQueue()
-                self.thread_state.state_queue = queue.SimpleQueue()
-                self.thread_state.match_thread = threading.Thread(target=self.play_match)
-                self.thread_state.match_thread.start()
+                self.thread_state.start(self.play_match)
             else:
                 self.thread_state.move_queue.put(None)
             (self.match_info.replay, self.match_info.log, self.match_info.state) = self.thread_state.state_queue.get()
@@ -408,14 +411,14 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
     async def create_match(self):
         def move_getter(choice, options, undo):
             raise TerminatePlay()
-        rules = await self.match_info.rules()
+        rules = self.match_info.rules()
         nations_match = nations.Match(player_names=self.match_info.players, move_getter=move_getter, rules=rules)
         try:
             nations_match.play()
         except TerminatePlay:
             pass
-        self.match_info.replay = nations_match.get_replay().replace('\r', '').rstrip('\n')
-        self.match_info.log = nations_match.get_log().replace('\r', '').rstrip('\n')
+        self.match_info.replay = nations_match.get_replay()
+        self.match_info.log = nations_match.get_log()
         self.match_info.state = nations_match.get_state()
         self.match_info.current_player = self.match_info.state['next_move_player']
         self.match_info.game_over = self.match_info.state['game_over']
