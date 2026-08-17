@@ -71,7 +71,7 @@ class MatchInfo:
         self.lincoln_nerf = None
         self.players = None
         self.player_growth_resources = None
-        self.replay = None
+        self.replay_lines = []
         self.prev_player = None
         self.current_player = None
         self.game_over = False
@@ -164,7 +164,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         self.match_info.korea_nerf = match.korea_nerf
         self.match_info.lincoln_nerf = match.lincoln_nerf
         self.match_info.players = players
-        self.match_info.replay = match.replay.strip()
+        self.match_info.replay_lines = match.replay.strip().splitlines()
         self.match_info.current_player = current_player
         self.match_info.game_over = match.game_over
         self.match_info.player_growth_resources = {player: await self.get_growth_resources_from_db(player) for player in players}
@@ -175,7 +175,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             match = Match.objects.get(match_id=self.match_info.match_id)
         except Match.DoesNotExist:
             return
-        match.replay = self.match_info.replay
+        match.replay = '\n'.join(self.match_info.replay_lines).strip() + '\n'
         if self.match_info.game_over:
             user = get_deleted_user()
         else:
@@ -355,10 +355,9 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
 
     def play_match(self):
         def report_state(nations_match):
-            replay = nations_match.get_replay()
             log = nations_match.get_log()
             state = nations_match.get_state()
-            self.thread_state.state_queue.put((replay, log, state))
+            self.thread_state.state_queue.put((log, state))
 
         def move_getter(choice, options, undo):
             while True:
@@ -376,7 +375,8 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             next_move = None
             return move
 
-        nations_match = nations.Match(move_getter=move_getter, replay=self.match_info.replay)
+        replay = '\n'.join(self.match_info.replay_lines).strip() + '\n'
+        nations_match = nations.Match(move_getter=move_getter, replay=replay)
         try:
             nations_match.play()
         except TerminatePlay:
@@ -391,20 +391,20 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
                 return
 
     async def get_match_info(self):
-        if self.match_info.replay and self.match_info.state and self.thread_state.is_running():
+        if self.match_info.replay_lines and self.match_info.state and self.thread_state.is_running():
             return
         await self.get_match()
-        if not self.match_info.replay and len(await self.get_accepted_players_from_db()) == self.match_info.player_count:
+        if not self.match_info.replay_lines and len(await self.get_accepted_players_from_db()) == self.match_info.player_count:
             await self.create_match()
             await self.get_match()
-        replay = self.match_info.replay
+        replay_lines = self.match_info.replay_lines
         state = self.match_info.state
-        if (replay and not state) or (replay and state and not self.thread_state.is_running()):
+        if (replay_lines and not state) or (replay_lines and state and not self.thread_state.is_running()):
             if not self.thread_state.is_running():
                 self.thread_state.start(self.play_match)
             else:
                 self.thread_state.move_queue.put(None)
-            (self.match_info.replay, self.match_info.log, self.match_info.state) = self.thread_state.state_queue.get()
+            (self.match_info.log, self.match_info.state) = self.thread_state.state_queue.get()
             self.match_info.current_player = self.match_info.state['next_move_player']
             self.match_info.game_over = self.match_info.state['game_over']
 
@@ -417,7 +417,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             nations_match.play()
         except TerminatePlay:
             pass
-        self.match_info.replay = nations_match.get_replay()
+        self.match_info.replay_lines = nations_match.get_replay().strip().splitlines()
         self.match_info.log = nations_match.get_log()
         self.match_info.state = nations_match.get_state()
         self.match_info.current_player = self.match_info.state['next_move_player']
@@ -428,8 +428,16 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
     async def make_move(self, move):
         if not self.thread_state.is_running():
             await self.get_match_info()
+        undo_allowed = self.match_info.state['undo_allowed']
         self.thread_state.move_queue.put(move)
-        (self.match_info.replay, self.match_info.log, self.match_info.state) = self.thread_state.state_queue.get()
+        (self.match_info.log, self.match_info.state) = self.thread_state.state_queue.get()
+        if move == 'UNDO':
+            if undo_allowed:
+                self.match_info.replay_lines.pop()
+        elif not self.match_info.state['invalid_move']:
+            if '' not in self.match_info.replay_lines:
+                self.match_info.replay_lines.append('')
+            self.match_info.replay_lines.append(move)
         self.match_info.prev_player = self.match_info.current_player
         self.match_info.current_player = self.match_info.state['next_move_player']
         self.match_info.game_over = self.match_info.state['game_over']
@@ -529,7 +537,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         if self.avoid_duplicate_updates:
             self.avoid_duplicate_updates = False
             return
-        self.match_info.state = None
         if event['move'] is not None:
             await self.make_move(event['move'])
         await self.send_match_info()
@@ -541,10 +548,10 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         await self.get_match_info()
         if self.match_info.players is None:
             return
-        replay = self.match_info.replay
+        replay_lines = self.match_info.replay_lines
         players = self.match_info.players
         player_growth_resources = self.match_info.player_growth_resources
-        if replay and players and player_growth_resources and all(player in player_growth_resources for player in players):
+        if replay_lines and players and player_growth_resources and all(player in player_growth_resources for player in players):
             accepted_players = players
         else:
             accepted_players = await self.get_accepted_players_from_db()
