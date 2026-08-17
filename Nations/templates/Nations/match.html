@@ -1250,7 +1250,7 @@
                         if (data && data['state']) {
                             new_state = true;
                             state = data['state'];
-                            match_log_data = data['log'];
+                            match_log_data = data['log'].trim();
                             {% if user.is_authenticated %}
                                 if (state && state['player_order'] && state['player_order'].includes(username) && prev_notes !== null) {
                                     var notes = document.getElementById('personal-notes');
