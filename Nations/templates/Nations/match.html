@@ -916,6 +916,7 @@
                 'text_color': '#000000',
                 'font_size': 42,
                 'text': '',
+                'center_text': false,
                 'enabled': true
             },
             'invalid': {
@@ -926,6 +927,7 @@
                 'text_color': '#c00000',
                 'font_size': 42,
                 'text': '',
+                'center_text': false,
                 'enabled': true
             },
             'choice': {
@@ -936,6 +938,7 @@
                 'text_color': '#000000',
                 'font_size': 42,
                 'text': '',
+                'center_text': false,
                 'enabled': true
             },
             'options': {
@@ -946,6 +949,18 @@
                 'text_color': '#000000',
                 'font_size': 42,
                 'text': '',
+                'center_text': false,
+                'enabled': true
+            },
+            'replaying_status': {
+                'box': [1280, 180, 280, 60],
+                'border': true,
+                'margin': 20,
+                'color': '#c0c0c0',
+                'text_color': '#000000',
+                'font_size': 48,
+                'text': 'Live',
+                'center_text': true,
                 'enabled': true
             }
         };
@@ -1040,6 +1055,57 @@
             return click_progress_board;
         }
 
+        function replay_begin() {
+            if (state === null) {
+                return;
+            }
+            send_message({'replay': {'round': 0}});
+        }
+
+        function replay_end() {
+            if (state === null) {
+                return;
+            }
+            send_message({'replay': {'end': 0}});
+        }
+
+        function replay_back() {
+            if (state === null) {
+                return;
+            }
+            send_message({'replay': {'back': 1}});
+        }
+
+        function replay_forward() {
+            if (state === null) {
+                return;
+            }
+            send_message({'replay': {'forward': 1}});
+        }
+
+        function replay_prev_round() {
+            if (state === null) {
+                return;
+            }
+            const round = state['round'];
+            const current_round_start = state['round_starts'][round];
+            const to_round = replay_position > current_round_start ? round : round - 1;
+            send_message({'replay': {'round': to_round}});
+        }
+
+        function replay_next_round() {
+            if (state === null) {
+                return;
+            }
+            const round = state['round'];
+            const round_starts = state['round_starts'];
+            if (round_starts[round + 1]) {
+                send_message({'replay': {'round': round + 1}});
+            } else {
+                send_message({'replay': {'stay': 0}});
+            }
+        }
+
         var buttons = {
             'pass': {
                 'box': [0, 180, 280, 60],
@@ -1076,6 +1142,92 @@
                 'move': 'Confirm',
                 'function': null,
                 'enabled': false
+            }
+        };
+        var replay_buttons = {
+            'replay_begin': {
+                'box': [640, 180, 80, 60],
+                'border': true,
+                'margin': 20,
+                'color': '#909090',
+                'text_color': '#000000',
+                'font_size': 48,
+                'text': 'Begin',
+                'move': null,
+                'function': replay_begin,
+                'enabled': true
+            },
+            'replay_prev_round': {
+                'box': [720, 180, 80, 60],
+                'border': true,
+                'margin': 20,
+                'color': '#909090',
+                'text_color': '#000000',
+                'font_size': 48,
+                'text': 'RW',
+                'move': null,
+                'function': replay_prev_round,
+                'enabled': true
+            },
+            'replay_back': {
+                'box': [800, 180, 80, 60],
+                'border': true,
+                'margin': 20,
+                'color': '#909090',
+                'text_color': '#000000',
+                'font_size': 48,
+                'text': 'Back',
+                'move': null,
+                'function': replay_back,
+                'enabled': true
+            },
+            'replay_move_number': {
+                'box': [880, 180, 160, 60],
+                'border': true,
+                'margin': 20,
+                'color': '#909090',
+                'text_color': '#000000',
+                'font_size': 30,
+                'text': '0/0',
+                'move': null,
+                'function': null,
+                'enabled': true
+            },
+            'replay_forward': {
+                'box': [1040, 180, 80, 60],
+                'border': true,
+                'margin': 20,
+                'color': '#909090',
+                'text_color': '#000000',
+                'font_size': 48,
+                'text': 'Forward',
+                'move': null,
+                'function': replay_forward,
+                'enabled': true
+            },
+            'replay_next_round': {
+                'box': [1120, 180, 80, 60],
+                'border': true,
+                'margin': 20,
+                'color': '#909090',
+                'text_color': '#000000',
+                'font_size': 48,
+                'text': 'FF',
+                'move': null,
+                'function': replay_next_round,
+                'enabled': true
+            },
+            'replay_end': {
+                'box': [1200, 180, 80, 60],
+                'border': true,
+                'margin': 20,
+                'color': '#909090',
+                'text_color': '#000000',
+                'font_size': 48,
+                'text': 'End',
+                'move': null,
+                'function': replay_end,
+                'enabled': true
             }
         };
         var resign_button = {
@@ -1122,8 +1274,6 @@
         var match_socket = null;
         var match_socket_connecting = false;
         var match_socket_open = false;
-        var keepalive_timer = null;
-        var keepalive_timeout = 5000;
         var reopen_timer = null;
         const reopen_initial_timeout = 200;
         var reopen_timeout = reopen_initial_timeout;
@@ -1146,6 +1296,9 @@
         var players_data = null;
         var has_accepted = false;
         var state = null;
+        var replaying = false;
+        var replay_position = 0;
+        var move_number = 0;
         var drawn_once = false;
         var match_log_data = null;
         var prev_notes = null;
@@ -1250,6 +1403,9 @@
                         if (data && data['state']) {
                             new_state = true;
                             state = data['state'];
+                            replaying = data['replaying'];
+                            replay_position = data['replay_position'];
+                            move_number = data['move_number'];
                             match_log_data = data['log'].trim();
                             {% if user.is_authenticated %}
                                 if (state && state['player_order'] && state['player_order'].includes(username) && prev_notes !== null) {
@@ -1309,7 +1465,6 @@
                         refresh_pending_time = new Date();
                         match_socket_connecting = false;
                         match_socket_open = true;
-                        //set_keepalive_timer();
                     }
                 );
                 match_socket.addEventListener('close', (event) =>
@@ -1401,19 +1556,6 @@
             }
         }
 
-        function send_keepalive(event) {
-            send_message({'keepalive': null});
-            keepalive_timer = null;
-            set_keepalive_timer();
-        }
-
-        function set_keepalive_timer() {
-            if (keepalive_timer) {
-                return;
-            }
-            keepalive_timer = setTimeout(send_keepalive, keepalive_timeout);
-        }
-
         document.addEventListener('visibilitychange', (event) =>
             {
                 if (!document.hidden) {
@@ -1433,7 +1575,7 @@
         window.addEventListener('load', set_page_title);
 
         function send_message(move) {
-            if (!moving_enabled && 'move' in move) {
+            if ((!moving_enabled || replaying) && 'move' in move) {
                 return;
             }
             reopen_match_socket_if_necessary_without_requesting_update();
@@ -1952,7 +2094,7 @@
                 const current_player = state['next_move_player'];
                 const player_is_next = current_player == username;
                 const active_player = player_is_next || is_superuser;
-                const enable_hitboxes = active_player && player == current_player;
+                const enable_hitboxes = active_player && player == current_player && !replaying;
                 const options = state['next_move_options'];
                 const player_info = state['players'][player];
                 const nation = player_info['nation'];
@@ -2357,7 +2499,7 @@
             const current_player = state['next_move_player'];
             const player_is_next = current_player == username;
             const active_player = player_is_next || is_superuser;
-            const enable_hitboxes = active_player;
+            const enable_hitboxes = active_player && !replaying;
             const progress_board = state['progress_board'];
             const architects = state['architects'];
             const turmoil = state['turmoil'];
@@ -2616,7 +2758,12 @@
                 draw.fillStyle = enabled ? text_color : disabled_text_color;
                 if (message_boxes[name]) {
                     draw.textBaseline = 'middle';
-                    draw.textAlign = 'left';
+                    const center_text = button_info['center_text'];
+                    if (center_text) {
+                        draw.textAlign = 'center';
+                    } else {
+                        draw.textAlign = 'left';
+                    }
                     const current_player_text = 'Current player: ';
                     if (text.startsWith(current_player_text)) {
                         const player = text.substring(current_player_text.length);
@@ -2626,7 +2773,7 @@
                         draw_image(player_token, box[0] + 312, mid_y - 21);
                         draw.fillText(player, box[0] + 380, mid_y);
                     } else {
-                        draw.fillText(text, box[0] + 20, mid_y);
+                        draw.fillText(text, center_text ? mid_x : box[0] + 20, mid_y);
                     }
                 } else {
                     draw.textBaseline = 'middle';
@@ -2642,6 +2789,111 @@
                     }
                 }
             }
+            for (var name in replay_buttons) {
+                const button_info = replay_buttons[name];
+                var box = [...button_info['box']];
+                box[1] += vertical_offset;
+                const border = button_info['border'];
+                const color = button_info['color'];
+                const text_color = button_info['text_color'];
+                const font_size = button_info['font_size'];
+                const enabled = button_info['enabled'];
+                const fill_color = enabled ? color : disabled_background_color;
+                const mid_x = Math.floor(box[0] + box[2] / 2);
+                const mid_y = Math.floor(box[1] + box[3] / 2);
+                draw.textBaseline = 'middle';
+                draw.textAlign = 'center';
+                draw.font = font_size + 'px sans-serif';
+                draw.strokeStyle = fill_color;
+                draw.fillStyle = fill_color;
+                if (border) {
+                    bordered_fill_rect(box);
+                } else {
+                    fill_rect(box);
+                }
+                draw.lineWidth = 1;
+                draw.strokeStyle = enabled ? text_color : disabled_text_color;
+                draw.fillStyle = draw.strokeStyle;
+                if (name == 'replay_begin') {
+                    fill_rect([mid_x - 15, mid_y - 20, 8, 40]);
+                    draw.beginPath();
+                    draw.moveTo(mid_x - 6, mid_y + 0);
+                    draw.lineTo(mid_x + 15, mid_y - 20);
+                    draw.lineTo(mid_x + 15, mid_y + 20);
+                    draw.closePath();
+                    draw.stroke();
+                    draw.fill();
+                } else if (name == 'replay_prev_round') {
+                    draw.beginPath();
+                    draw.moveTo(mid_x - 22, mid_y + 0);
+                    draw.lineTo(mid_x - 1, mid_y - 20);
+                    draw.lineTo(mid_x - 1, mid_y + 20);
+                    draw.closePath();
+                    draw.stroke();
+                    draw.fill();
+                    draw.beginPath();
+                    draw.moveTo(mid_x + 0, mid_y + 0);
+                    draw.lineTo(mid_x + 21, mid_y - 20);
+                    draw.lineTo(mid_x + 21, mid_y + 20);
+                    draw.closePath();
+                    draw.stroke();
+                    draw.fill();
+                } else if (name == 'replay_back') {
+                    fill_rect([mid_x + 5, mid_y - 20, 8, 40]);
+                    draw.beginPath();
+                    draw.moveTo(mid_x - 19, mid_y + 0);
+                    draw.lineTo(mid_x + 2, mid_y - 20);
+                    draw.lineTo(mid_x + 2, mid_y + 20);
+                    draw.closePath();
+                    draw.stroke();
+                    draw.fill();
+                } else if (name == 'replay_move_number') {
+                    draw.fillText(replay_position + '/' + move_number, mid_x, mid_y);
+                } else if (name == 'replay_forward') {
+                    fill_rect([mid_x - 13, mid_y - 20, 8, 40]);
+                    draw.beginPath();
+                    draw.moveTo(mid_x + 19, mid_y + 0);
+                    draw.lineTo(mid_x - 2, mid_y + 20);
+                    draw.lineTo(mid_x - 2, mid_y - 20);
+                    draw.closePath();
+                    draw.stroke();
+                    draw.fill();
+                } else if (name == 'replay_next_round') {
+                    draw.beginPath();
+                    draw.moveTo(mid_x - 1, mid_y + 0);
+                    draw.lineTo(mid_x - 22, mid_y + 20);
+                    draw.lineTo(mid_x - 22, mid_y - 20);
+                    draw.closePath();
+                    draw.stroke();
+                    draw.fill();
+                    draw.beginPath();
+                    draw.moveTo(mid_x + 21, mid_y + 0);
+                    draw.lineTo(mid_x + 0, mid_y + 20);
+                    draw.lineTo(mid_x + 0, mid_y - 20);
+                    draw.closePath();
+                    draw.stroke();
+                    draw.fill();
+                } else if (name == 'replay_end') {
+                    fill_rect([mid_x + 7, mid_y - 20, 8, 40]);
+                    draw.beginPath();
+                    draw.moveTo(mid_x + 6, mid_y + 0);
+                    draw.lineTo(mid_x - 15, mid_y + 20);
+                    draw.lineTo(mid_x - 15, mid_y - 20);
+                    draw.closePath();
+                    draw.stroke();
+                    draw.fill();
+                }
+                if (enabled) {
+                    hitboxes.push({
+                        'box': box,
+                        'move': button_info['move'],
+                        'function': button_info['function'],
+                        'enabled': enabled
+                    });
+                }
+            }
+            draw.strokeStyle = '#000000';
+            draw.lineWidth = 7;
             if (option_buttons !== null) {
                 const option_buttons_info = message_boxes['options'];
                 const options_box = option_buttons_info['box'];
@@ -3023,6 +3275,7 @@
             const current_player = state['next_move_player'];
             const player_is_next = current_player == username;
             const active_player = player_is_next || is_superuser;
+            const enable_hitboxes = active_player && !replaying;
             const options = state['next_move_options'];
             const players = state['first_round_player_order'];
             const event = state['event'];
@@ -3046,10 +3299,10 @@
             if (follow_boards) {
                 show_player_board = current_player;
             }
-            buttons['pass']['enabled'] = active_player && options.includes('Pass');
-            buttons['undo']['enabled'] = active_player && state['undo_allowed'];
-            buttons['confirm']['enabled'] = active_player && options.includes('Confirm');
-            resign_button['enabled'] = active_player && options.includes('Resign');
+            buttons['pass']['enabled'] = enable_hitboxes && options.includes('Pass');
+            buttons['undo']['enabled'] = enable_hitboxes && state['undo_allowed'];
+            buttons['confirm']['enabled'] = enable_hitboxes && options.includes('Confirm');
+            resign_button['enabled'] = enable_hitboxes && options.includes('Resign');
             if (state['game_over']) {
                 message_boxes['player']['text'] = 'Game over!';
                 message_boxes['choice']['text'] = '';
@@ -3091,7 +3344,7 @@
                         option_buttons[option] = {
                             'box': [box[0], box[1], 0, 56],
                             'margin': 20,
-                            'color': (active_player && option == 'Confirm and complete the turn now') ? '#90f090' : '#f0f0f0',
+                            'color': (enable_hitboxes && option == 'Confirm and complete the turn now') ? '#90f090' : '#f0f0f0',
                             'text_color': text_color,
                             'font_size': font_size,
                             'text': option,
@@ -3105,6 +3358,13 @@
                 if (num_option_buttons == 0) {
                     option_buttons = null;
                 }
+            }
+            if (replaying) {
+                message_boxes['replaying_status']['text'] = 'Replaying';
+                message_boxes['replaying_status']['text_color'] = '#ff0000';
+            } else {
+                message_boxes['replaying_status']['text'] = 'Live';
+                message_boxes['replaying_status']['text_color'] = '#000000';
             }
             var new_image = false;
             var all_nations = [];

@@ -72,6 +72,7 @@ class MatchInfo:
         self.players = None
         self.player_growth_resources = None
         self.replay_lines = []
+        self.replay_position = None
         self.prev_player = None
         self.current_player = None
         self.game_over = False
@@ -107,6 +108,7 @@ class ThreadState:
 class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
         self.match_info = MatchInfo(self.scope['url_route']['kwargs']['match_id'])
+        self.replay_info = MatchInfo(self.scope['url_route']['kwargs']['match_id'])
         self.thread_state = ThreadState()
         self.sent_initial_info = False
         self.avoid_duplicate_updates = False
@@ -359,7 +361,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             state = nations_match.get_state()
             self.thread_state.state_queue.put((log, state))
 
-        def move_getter(choice, options, undo):
+        def move_getter(choice, options, undo_allowed):
             while True:
                 report_state(nations_match)
                 next_move = self.thread_state.move_queue.get()
@@ -390,6 +392,27 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             if next_move is TerminatePlay:
                 return
 
+    async def get_replay_log_state(self):
+        def move_getter(choice, options, undo_allowed):
+            raise TerminatePlay()
+
+        if '' not in self.match_info.replay_lines:
+            index = len(self.match_info.replay_lines)
+        else:
+            index = self.match_info.replay_lines.index('') + 1 + self.replay_info.replay_position
+        replay = '\n'.join(self.match_info.replay_lines[:index]).strip() + '\n'
+        nations_match = nations.Match(move_getter=move_getter, replay=replay)
+        try:
+            nations_match.play()
+        except TerminatePlay:
+            pass
+        except Exception:
+            import traceback
+            traceback.print_exc()
+        log = nations_match.get_log()
+        state = nations_match.get_state()
+        return (log, state)
+
     async def get_match_info(self):
         if self.match_info.replay_lines and self.match_info.state and self.thread_state.is_running():
             return
@@ -409,8 +432,9 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             self.match_info.game_over = self.match_info.state['game_over']
 
     async def create_match(self):
-        def move_getter(choice, options, undo):
+        def move_getter(choice, options, undo_allowed):
             raise TerminatePlay()
+
         rules = self.match_info.rules()
         nations_match = nations.Match(player_names=self.match_info.players, move_getter=move_getter, rules=rules)
         try:
@@ -438,6 +462,10 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             if '' not in self.match_info.replay_lines:
                 self.match_info.replay_lines.append('')
             self.match_info.replay_lines.append(move)
+        if self.replay_info.replay_position is not None:
+            if self.replay_info.replay_position > self.match_info.state['move_number']:
+                self.replay_info.replay_position = self.match_info.state['move_number']
+                (self.replay_info.log, self.replay_info.state) = await self.get_replay_log_state()
         self.match_info.prev_player = self.match_info.current_player
         self.match_info.current_player = self.match_info.state['next_move_player']
         self.match_info.game_over = self.match_info.state['game_over']
@@ -514,6 +542,46 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         }
         await self.send_json(message)
 
+    async def adjust_replay_position(self, position, command):
+        for (command_type, command_value) in command.items():
+            if command_type == 'round':
+                if command_value in self.match_info.state['round_starts']:
+                    return self.match_info.state['round_starts'][command_value]
+                else:
+                    return position
+            elif command_type == 'back':
+                if position > 0:
+                    return position - 1
+                else:
+                    return 0
+            elif command_type == 'stay':
+                return position
+            elif command_type == 'forward':
+                if position < self.match_info.state['move_number']:
+                    return position + 1
+                else:
+                    return position
+            elif command_type == 'to':
+                if command_value <= 0:
+                    return 0
+                elif command_value > self.match_info.state['move_number']:
+                    return self.match_info.state['move_number']
+                else:
+                    return command_value
+            elif command_type == 'end':
+                return None
+        return position
+
+    async def received_replay_command(self, command):
+        if self.replay_info.replay_position is None:
+            self.replay_info.replay_position = self.match_info.state['move_number']
+        self.replay_info.replay_position = await self.adjust_replay_position(self.replay_info.replay_position, command)
+        if self.replay_info.replay_position is None:
+            await self.send_match_info()
+            return
+        (self.replay_info.log, self.replay_info.state) = await self.get_replay_log_state()
+        await self.send_replay_info()
+
     async def receive_json(self, content):
         if not self.scope['user'].is_authenticated:
             await self.received_info_request()
@@ -530,8 +598,8 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             await self.received_chat(content['chat'])
         elif 'notes' in content:
             await self.received_notes(content['notes'])
-        elif 'keepalive' in content:
-            await self.send_keepalive()
+        elif 'replay' in content:
+            await self.received_replay_command(content['replay'])
 
     async def state_change_message(self, event):
         if self.avoid_duplicate_updates:
@@ -545,6 +613,9 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         await self.send_turns_info()
 
     async def send_match_info(self):
+        if self.replay_info.replay_position is not None:
+            await self.send_replay_info()
+            return
         await self.get_match_info()
         if self.match_info.players is None:
             return
@@ -556,14 +627,31 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         else:
             accepted_players = await self.get_accepted_players_from_db()
         message = {
+            'replaying': False,
+            'replay_position': self.match_info.state['move_number'],
+            'move_number': self.match_info.state['move_number'],
             'players': players,
             'accepted': accepted_players,
             'growth_resources': player_growth_resources,
             'state': self.match_info.state,
-            'log': self.match_info.log,
+            'log': self.match_info.log
         }
         await self.send_json(message)
         self.sent_initial_info = True
+
+    async def send_replay_info(self):
+        self.replay_info.state['round_starts'] = dict(self.match_info.state['round_starts'])
+        message = {
+            'replaying': True,
+            'replay_position': self.replay_info.replay_position,
+            'move_number': self.match_info.state['move_number'],
+            'players': self.match_info.players,
+            'accepted': self.match_info.players,
+            'growth_resources': self.match_info.player_growth_resources,
+            'state': self.replay_info.state,
+            'log': self.replay_info.log
+        }
+        await self.send_json(message)
 
     async def send_turns_info(self):
         number_of_turns = await self.get_number_of_turns_from_db()
@@ -573,12 +661,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         chat_log = await self.get_chat_log_from_db()
         message = {
             'chat_log': chat_log
-        }
-        await self.send_json(message)
-
-    async def send_keepalive(self):
-        message = {
-            'keepalive': None
         }
         await self.send_json(message)
 
