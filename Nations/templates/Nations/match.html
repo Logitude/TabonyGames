@@ -953,12 +953,12 @@
                 'enabled': true
             },
             'replaying_status': {
-                'box': [1280, 180, 280, 60],
+                'box': [1375, 180, 100, 60],
                 'border': true,
                 'margin': 20,
-                'color': '#c0c0c0',
+                'color': background_color,
                 'text_color': '#000000',
-                'font_size': 48,
+                'font_size': 30,
                 'text': 'Live',
                 'center_text': true,
                 'enabled': true
@@ -1146,7 +1146,7 @@
         };
         var replay_buttons = {
             'replay_begin': {
-                'box': [640, 180, 80, 60],
+                'box': [735, 180, 80, 60],
                 'border': true,
                 'margin': 20,
                 'color': '#909090',
@@ -1158,7 +1158,7 @@
                 'enabled': true
             },
             'replay_prev_round': {
-                'box': [720, 180, 80, 60],
+                'box': [815, 180, 80, 60],
                 'border': true,
                 'margin': 20,
                 'color': '#909090',
@@ -1170,7 +1170,7 @@
                 'enabled': true
             },
             'replay_back': {
-                'box': [800, 180, 80, 60],
+                'box': [895, 180, 80, 60],
                 'border': true,
                 'margin': 20,
                 'color': '#909090',
@@ -1182,7 +1182,7 @@
                 'enabled': true
             },
             'replay_move_number': {
-                'box': [880, 180, 160, 60],
+                'box': [975, 180, 160, 60],
                 'border': true,
                 'margin': 20,
                 'color': '#909090',
@@ -1194,7 +1194,7 @@
                 'enabled': true
             },
             'replay_forward': {
-                'box': [1040, 180, 80, 60],
+                'box': [1135, 180, 80, 60],
                 'border': true,
                 'margin': 20,
                 'color': '#909090',
@@ -1206,7 +1206,7 @@
                 'enabled': true
             },
             'replay_next_round': {
-                'box': [1120, 180, 80, 60],
+                'box': [1215, 180, 80, 60],
                 'border': true,
                 'margin': 20,
                 'color': '#909090',
@@ -1218,7 +1218,7 @@
                 'enabled': true
             },
             'replay_end': {
-                'box': [1200, 180, 80, 60],
+                'box': [1295, 180, 80, 60],
                 'border': true,
                 'margin': 20,
                 'color': '#909090',
@@ -3360,9 +3360,11 @@
                 }
             }
             if (replaying) {
+                message_boxes['replaying_status']['box'][2] = 180;
                 message_boxes['replaying_status']['text'] = 'Replaying';
                 message_boxes['replaying_status']['text_color'] = '#ff0000';
             } else {
+                message_boxes['replaying_status']['box'][2] = 100;
                 message_boxes['replaying_status']['text'] = 'Live';
                 message_boxes['replaying_status']['text_color'] = '#000000';
             }
