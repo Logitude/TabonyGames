@@ -72,7 +72,7 @@ class MatchInfo:
         self.players = None
         self.player_growth_resources = None
         self.replay_lines = []
-        self.replay_position = None
+        self.move_number = None
         self.prev_player = None
         self.current_player = None
         self.game_over = False
@@ -399,7 +399,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         if '' not in self.match_info.replay_lines:
             index = len(self.match_info.replay_lines)
         else:
-            index = self.match_info.replay_lines.index('') + 1 + self.replay_info.replay_position
+            index = self.match_info.replay_lines.index('') + 1 + self.replay_info.move_number
         replay = '\n'.join(self.match_info.replay_lines[:index]).strip() + '\n'
         nations_match = nations.Match(move_getter=move_getter, replay=replay)
         try:
@@ -428,6 +428,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             else:
                 self.thread_state.move_queue.put(None)
             (self.match_info.log, self.match_info.state) = self.thread_state.state_queue.get()
+            self.match_info.move_number = self.match_info.state['move_number']
             self.match_info.current_player = self.match_info.state['next_move_player']
             self.match_info.game_over = self.match_info.state['game_over']
 
@@ -444,6 +445,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         self.match_info.replay_lines = nations_match.get_replay().strip().splitlines()
         self.match_info.log = nations_match.get_log()
         self.match_info.state = nations_match.get_state()
+        self.match_info.move_number = self.match_info.state['move_number']
         self.match_info.current_player = self.match_info.state['next_move_player']
         self.match_info.game_over = self.match_info.state['game_over']
         await self.save_match()
@@ -462,9 +464,10 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             if '' not in self.match_info.replay_lines:
                 self.match_info.replay_lines.append('')
             self.match_info.replay_lines.append(move)
-        if self.replay_info.replay_position is not None:
-            if self.replay_info.replay_position > self.match_info.state['move_number']:
-                self.replay_info.replay_position = self.match_info.state['move_number']
+        self.match_info.move_number = self.match_info.state['move_number']
+        if self.replay_info.move_number is not None:
+            if self.replay_info.move_number > self.match_info.move_number:
+                self.replay_info.move_number = self.match_info.move_number
                 (self.replay_info.log, self.replay_info.state) = await self.get_replay_log_state()
         self.match_info.prev_player = self.match_info.current_player
         self.match_info.current_player = self.match_info.state['next_move_player']
@@ -557,15 +560,15 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             elif command_type == 'stay':
                 return position
             elif command_type == 'forward':
-                if position < self.match_info.state['move_number']:
+                if position < self.match_info.move_number:
                     return position + 1
                 else:
                     return position
             elif command_type == 'to':
                 if command_value <= 0:
                     return 0
-                elif command_value > self.match_info.state['move_number']:
-                    return self.match_info.state['move_number']
+                elif command_value > self.match_info.move_number:
+                    return self.match_info.move_number
                 else:
                     return command_value
             elif command_type == 'end':
@@ -573,10 +576,10 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         return position
 
     async def received_replay_command(self, command):
-        if self.replay_info.replay_position is None:
-            self.replay_info.replay_position = self.match_info.state['move_number']
-        self.replay_info.replay_position = await self.adjust_replay_position(self.replay_info.replay_position, command)
-        if self.replay_info.replay_position is None:
+        if self.replay_info.move_number is None:
+            self.replay_info.move_number = self.match_info.move_number
+        self.replay_info.move_number = await self.adjust_replay_position(self.replay_info.move_number, command)
+        if self.replay_info.move_number is None:
             await self.send_match_info()
             return
         (self.replay_info.log, self.replay_info.state) = await self.get_replay_log_state()
@@ -613,7 +616,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         await self.send_turns_info()
 
     async def send_match_info(self):
-        if self.replay_info.replay_position is not None:
+        if self.replay_info.move_number is not None:
             await self.send_replay_info()
             return
         await self.get_match_info()
@@ -628,8 +631,8 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             accepted_players = await self.get_accepted_players_from_db()
         message = {
             'replaying': False,
-            'replay_position': self.match_info.state['move_number'],
-            'move_number': self.match_info.state['move_number'],
+            'replay_position': self.match_info.move_number,
+            'move_number': self.match_info.move_number,
             'players': players,
             'accepted': accepted_players,
             'growth_resources': player_growth_resources,
@@ -643,8 +646,8 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         self.replay_info.state['round_starts'] = dict(self.match_info.state['round_starts'])
         message = {
             'replaying': True,
-            'replay_position': self.replay_info.replay_position,
-            'move_number': self.match_info.state['move_number'],
+            'replay_position': self.replay_info.move_number,
+            'move_number': self.match_info.move_number,
             'players': self.match_info.players,
             'accepted': self.match_info.players,
             'growth_resources': self.match_info.player_growth_resources,
