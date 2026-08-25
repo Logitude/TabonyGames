@@ -1039,7 +1039,7 @@
                     return;
                 }
                 const player_is_next = state['next_move_player'] == username;
-                const active_player = player_is_next || is_superuser;
+                const active_player = (player_is_next || is_superuser) && !replaying;
                 if (!active_player) {
                     return;
                 }
@@ -2093,8 +2093,8 @@
                 const player_color_code = player_color_codes[player_color];
                 const current_player = state['next_move_player'];
                 const player_is_next = current_player == username;
-                const active_player = player_is_next || is_superuser;
-                const enable_hitboxes = active_player && player == current_player && !replaying;
+                const active_player = (player_is_next || is_superuser) && !replaying;
+                const enable_hitboxes = active_player && player == current_player;
                 const options = state['next_move_options'];
                 const player_info = state['players'][player];
                 const nation = player_info['nation'];
@@ -2498,8 +2498,8 @@
             const options = state['next_move_options'];
             const current_player = state['next_move_player'];
             const player_is_next = current_player == username;
-            const active_player = player_is_next || is_superuser;
-            const enable_hitboxes = active_player && !replaying;
+            const active_player = (player_is_next || is_superuser) && !replaying;
+            const enable_hitboxes = active_player;
             const progress_board = state['progress_board'];
             const architects = state['architects'];
             const turmoil = state['turmoil'];
@@ -3274,8 +3274,8 @@
             }
             const current_player = state['next_move_player'];
             const player_is_next = current_player == username;
-            const active_player = player_is_next || is_superuser;
-            const enable_hitboxes = active_player && !replaying;
+            const active_player = (player_is_next || is_superuser) && !replaying;
+            const enable_hitboxes = active_player;
             const options = state['next_move_options'];
             const players = state['first_round_player_order'];
             const event = state['event'];
