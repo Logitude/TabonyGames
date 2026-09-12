@@ -586,6 +586,9 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         await self.send_replay_info()
 
     async def receive_json(self, content):
+        if content is not None and 'replay' in content:
+            await self.received_replay_command(content['replay'])
+            return
         if not self.scope['user'].is_authenticated:
             await self.received_info_request()
             return
@@ -601,8 +604,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             await self.received_chat(content['chat'])
         elif 'notes' in content:
             await self.received_notes(content['notes'])
-        elif 'replay' in content:
-            await self.received_replay_command(content['replay'])
 
     async def state_change_message(self, event):
         if self.avoid_duplicate_updates:
