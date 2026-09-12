@@ -694,17 +694,16 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         event_loop = asyncio.get_event_loop()
         event_loop.create_task(self.notify_user(self.match_info.current_player))
 
-    @database_sync_to_async
-    def notify_user(self, username):
-        try:
-            user = User.objects.get(username=username)
-        except User.DoesNotExist:
-            return
+    async def notify_user(self, username):
+        user = await self.get_user_from_db(username)
         if user.turn_notification_emails:
-            self.notify_email(user)
+            try:
+                await asyncio.wait_for(self.notify_email(user), timeout=1.0)
+            except TimeoutError:
+                return
 
-    def notify_email(self, user):
-        hostname = Site.objects.get_current().domain
+    async def notify_email(self, user):
+        hostname = (await sync_to_async(Site.objects.get_current)()).domain
         match_url = reverse('Nations:match', kwargs={'pk': str(self.match_info.match_id)})
         subject = '[Tabony Games] Your turn!'
         body = f"""\
