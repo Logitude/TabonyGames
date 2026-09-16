@@ -17,8 +17,6 @@ from . import nations
 import asyncio
 import json
 import datetime
-import threading
-import queue
 
 class TerminatePlay(Exception):
     pass
@@ -90,26 +88,10 @@ class MatchInfo:
             rules['player_growth_resources'] = self.player_growth_resources
         return rules
 
-class ThreadState:
-    def __init__(self):
-        self.match_thread = None
-        self.move_queue = None
-        self.state_queue = None
-
-    def start(self, f):
-        self.move_queue = queue.SimpleQueue()
-        self.state_queue = queue.SimpleQueue()
-        self.match_thread = threading.Thread(target=f)
-        self.match_thread.start()
-
-    def is_running(self):
-        return self.match_thread is not None and self.match_thread.is_alive()
-
 class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
         self.match_info = MatchInfo(self.scope['url_route']['kwargs']['match_id'])
         self.replay_info = MatchInfo(self.scope['url_route']['kwargs']['match_id'])
-        self.thread_state = ThreadState()
         self.sent_initial_info = False
         self.avoid_duplicate_updates = False
         self.match_group_name = f'nations_match_{self.match_info.match_id}'
@@ -123,8 +105,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         await self.accept()
 
     async def disconnect(self, close_code):
-        if self.thread_state.is_running():
-            self.thread_state.move_queue.put(TerminatePlay)
         await self.channel_layer.group_discard(self.match_group_name, self.channel_name)
         if self.user_group_name is not None:
             await self.channel_layer.group_discard(self.user_group_name, self.channel_name)
@@ -355,42 +335,50 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         archive_threshold = make_aware(datetime.datetime.now() - datetime.timedelta(days=7))
         return len(Match.objects.filter(current_player=user, new_turn__gte=archive_threshold)) + len(MatchPlayer.objects.filter(player=user, accepted=False, match__new_turn__gte=archive_threshold))
 
-    def play_match(self):
-        def report_state(nations_match):
-            log = nations_match.get_log()
-            state = nations_match.get_state()
-            self.thread_state.state_queue.put((log, state))
+    async def make_move(self, move):
+        next_move = move
+        if self.match_info.state is not None:
+            undo_allowed = self.match_info.state['undo_allowed']
+            if move is not None and move == 'UNDO':
+                if undo_allowed:
+                    self.match_info.replay_lines.pop()
+                    next_move = None
 
         def move_getter(choice, options, undo_allowed):
-            while True:
-                report_state(nations_match)
-                next_move = self.thread_state.move_queue.get()
-                if next_move is TerminatePlay:
-                    raise TerminatePlay()
-                if next_move is not None:
-                    break
-            move_strings = [str(option) for option in options]
-            if next_move in move_strings:
-                move = options[move_strings.index(next_move)]
+            nonlocal next_move
+            if next_move is None:
+                raise TerminatePlay()
+            option_strings = [str(option) for option in options]
+            if next_move in option_strings:
+                option = options[option_strings.index(next_move)]
             else:
-                move = next_move
+                option = next_move
             next_move = None
-            return move
+            return option
 
         replay = '\n'.join(self.match_info.replay_lines).strip() + '\n'
         nations_match = nations.Match(move_getter=move_getter, replay=replay)
         try:
             nations_match.play()
         except TerminatePlay:
-            return
+            pass
         except Exception:
             import traceback
             traceback.print_exc()
-        while True:
-            report_state(nations_match)
-            next_move = self.thread_state.move_queue.get()
-            if next_move is TerminatePlay:
-                return
+        self.match_info.log = nations_match.get_log()
+        self.match_info.state = nations_match.get_state()
+        if move is not None and move != 'UNDO' and not self.match_info.state['invalid_move']:
+            if '' not in self.match_info.replay_lines:
+                self.match_info.replay_lines.append('')
+            self.match_info.replay_lines.append(move)
+        self.match_info.move_number = self.match_info.state['move_number']
+        if self.replay_info.move_number is not None:
+            if self.replay_info.move_number > self.match_info.move_number:
+                self.replay_info.move_number = self.match_info.move_number
+                (self.replay_info.log, self.replay_info.state) = await self.get_replay_log_state()
+        self.match_info.prev_player = self.match_info.current_player
+        self.match_info.current_player = self.match_info.state['next_move_player']
+        self.match_info.game_over = self.match_info.state['game_over']
 
     async def get_replay_log_state(self):
         def move_getter(choice, options, undo_allowed):
@@ -414,7 +402,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         return (log, state)
 
     async def get_match_info(self):
-        if self.match_info.replay_lines and self.match_info.state and self.thread_state.is_running():
+        if self.match_info.replay_lines and self.match_info.state:
             return
         await self.get_match()
         if not self.match_info.replay_lines and len(await self.get_accepted_players_from_db()) == self.match_info.player_count:
@@ -422,12 +410,8 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             await self.get_match()
         replay_lines = self.match_info.replay_lines
         state = self.match_info.state
-        if (replay_lines and not state) or (replay_lines and state and not self.thread_state.is_running()):
-            if not self.thread_state.is_running():
-                self.thread_state.start(self.play_match)
-            else:
-                self.thread_state.move_queue.put(None)
-            (self.match_info.log, self.match_info.state) = self.thread_state.state_queue.get()
+        if replay_lines and not state:
+            await self.make_move(None)
             self.match_info.move_number = self.match_info.state['move_number']
             self.match_info.current_player = self.match_info.state['next_move_player']
             self.match_info.game_over = self.match_info.state['game_over']
@@ -450,28 +434,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         self.match_info.game_over = self.match_info.state['game_over']
         await self.save_match()
         await self.notify()
-
-    async def make_move(self, move):
-        if not self.thread_state.is_running():
-            await self.get_match_info()
-        undo_allowed = self.match_info.state['undo_allowed']
-        self.thread_state.move_queue.put(move)
-        (self.match_info.log, self.match_info.state) = self.thread_state.state_queue.get()
-        if move == 'UNDO':
-            if undo_allowed:
-                self.match_info.replay_lines.pop()
-        elif not self.match_info.state['invalid_move']:
-            if '' not in self.match_info.replay_lines:
-                self.match_info.replay_lines.append('')
-            self.match_info.replay_lines.append(move)
-        self.match_info.move_number = self.match_info.state['move_number']
-        if self.replay_info.move_number is not None:
-            if self.replay_info.move_number > self.match_info.move_number:
-                self.replay_info.move_number = self.match_info.move_number
-                (self.replay_info.log, self.replay_info.state) = await self.get_replay_log_state()
-        self.match_info.prev_player = self.match_info.current_player
-        self.match_info.current_player = self.match_info.state['next_move_player']
-        self.match_info.game_over = self.match_info.state['game_over']
 
     async def received_info_request(self):
         if not self.sent_initial_info:
