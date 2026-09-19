@@ -357,7 +357,12 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             return option
 
         replay = '\n'.join(self.match_info.replay_lines).strip() + '\n'
-        nations_match = nations.Match(move_getter=move_getter, replay=replay)
+        try:
+            nations_match = nations.Match(move_getter=move_getter, replay=replay)
+        except Exception:
+            print(replay)
+            import traceback
+            traceback.print_exc()
         try:
             nations_match.play()
         except TerminatePlay:
