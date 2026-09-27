@@ -657,24 +657,39 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         if self.match_info.prev_player is not None:
             prev_player_user = await self.get_user_from_db(self.match_info.prev_player)
             await self.channel_layer.group_send(f'nations_notifications_{prev_player_user.pk}', {'type': 'new_turn'})
-        current_player_user = await self.get_user_from_db(self.match_info.current_player)
-        await self.channel_layer.group_send(f'nations_notifications_{current_player_user.pk}', {'type': 'new_turn'})
-        event_loop = asyncio.get_event_loop()
-        event_loop.create_task(self.notify_user(self.match_info.current_player))
+        if self.match_info.current_player is not None:
+            current_player_user = await self.get_user_from_db(self.match_info.current_player)
+            await self.channel_layer.group_send(f'nations_notifications_{current_player_user.pk}', {'type': 'new_turn'})
+            if current_player_user.turn_notification_emails:
+                event_loop = asyncio.get_event_loop()
+                event_loop.create_task(self.notify_user(self.match_info.current_player, False))
+        if self.match_info.game_over:
+            for player_name in self.match_info.players:
+                player_user = await self.get_user_from_db(player_name)
+                if player_user.turn_notification_emails:
+                    event_loop = asyncio.get_event_loop()
+                    event_loop.create_task(self.notify_user(player_name, True))
 
-    async def notify_user(self, username):
+    async def notify_user(self, username, game_over):
         user = await self.get_user_from_db(username)
-        if user.turn_notification_emails:
-            try:
-                await asyncio.wait_for(self.notify_email(user), timeout=1.0)
-            except TimeoutError:
-                return
+        try:
+            await asyncio.wait_for(self.notify_email(user, game_over), timeout=1.0)
+        except TimeoutError:
+            return
 
-    async def notify_email(self, user):
+    async def notify_email(self, user, game_over):
         hostname = (await sync_to_async(Site.objects.get_current)()).domain
         match_url = reverse('Nations:match', kwargs={'pk': str(self.match_info.match_id)})
-        subject = '[Tabony Games] Your turn!'
-        body = f"""\
+        if game_over:
+            subject = f'[Tabony Games] Nations match {self.match_info.match_id} complete!'
+            body = f"""\
+{user.username},
+
+See the results at https://{hostname}{match_url}
+"""
+        else:
+            subject = f'[Tabony Games] Your turn in Nations match {self.match_info.match_id}!'
+            body = f"""\
 {user.username},
 
 It's your turn in https://{hostname}{match_url}
