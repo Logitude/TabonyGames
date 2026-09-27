@@ -17,6 +17,9 @@ from . import nations
 import asyncio
 import json
 import datetime
+import logging
+
+logger = logging.getLogger(__name__)
 
 class TerminatePlay(Exception):
     pass
@@ -360,7 +363,8 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         try:
             nations_match = nations.Match(move_getter=move_getter, replay=replay)
         except Exception:
-            print(replay)
+            logger.warning('Failed to instantiate Nations match:')
+            logger.warning(replay)
             import traceback
             traceback.print_exc()
         try:
