@@ -365,6 +365,9 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         except Exception:
             logger.warning('Failed to instantiate Nations match:')
             logger.warning(replay)
+            logger.warning(move)
+            logger.warning(self.match_info.match_id)
+            logger.warning(self.match_info.players)
             import traceback
             traceback.print_exc()
         try:
