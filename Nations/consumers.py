@@ -583,6 +583,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         if self.avoid_duplicate_updates:
             self.avoid_duplicate_updates = False
             return
+        await self.get_match_info()
         if event['move'] is not None:
             await self.make_move(event['move'])
         await self.send_match_info()
