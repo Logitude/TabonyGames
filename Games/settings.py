@@ -26,7 +26,7 @@ with open(secrets_path) as secrets_file:
 DEBUG = not IN_PRODUCTION
 
 if IN_PRODUCTION:
-    ALLOWED_HOSTS = ['games.tabony.net', '208.113.131.91']
+    ALLOWED_HOSTS = ['games.tabony.net', '208.113.131.91', '[2607:f298:5:101d:f816:3eff:fee7:bea6]']
 else:
     ALLOWED_HOSTS = ['127.0.0.1', '192.168.1.6']
 
