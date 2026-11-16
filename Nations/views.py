@@ -1,4 +1,9 @@
+from functools import partial
+
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.conf import settings
+from django.db import transaction
 from django.shortcuts import get_object_or_404, render, redirect
 from django.contrib.auth.decorators import login_required
 from django.utils.timezone import make_aware
@@ -56,23 +61,28 @@ def confirm_create_match(request):
     if request.method == 'POST':
         player_names = [data['player1'], data['player2'], data['player3'], data['player4'], data['player5'], data['player6']]
         player_names = [player_name for player_name in player_names[:data['player_count']] if player_name]
-        match = Match.objects.create(
-            title=data['title'],
-            player_count=data['player_count'],
-            growth_resources=data['growth_resources'],
-            extra_draft_nations=data['extra_draft_nations'],
-            resource_remainder_tiebreaker=data['resource_remainder_tiebreaker'],
-            weighted_card_draw=data['weighted_card_draw'],
-            korea_nerf=data['korea_nerf'],
-            lincoln_nerf=data['lincoln_nerf']
-        )
         username = request.user.username
-        for player_name in player_names:
-            player = User.objects.get(username=player_name)
-            accepted = player_name == username and data['growth_resources'] > 0
-            match_player = MatchPlayer.objects.create(match=match, player=player, growth_resources=data['growth_resources'], accepted=accepted)
-            match_player.save()
-        match.save()
+        with transaction.atomic():
+            match = Match.objects.create(
+                title=data['title'],
+                player_count=data['player_count'],
+                growth_resources=data['growth_resources'],
+                extra_draft_nations=data['extra_draft_nations'],
+                resource_remainder_tiebreaker=data['resource_remainder_tiebreaker'],
+                weighted_card_draw=data['weighted_card_draw'],
+                korea_nerf=data['korea_nerf'],
+                lincoln_nerf=data['lincoln_nerf']
+            )
+            for player_name in player_names:
+                player = User.objects.get(username=player_name)
+                accepted = player_name == username and data['growth_resources'] > 0
+                MatchPlayer.objects.create(
+                    match=match, player=player, growth_resources=data['growth_resources'], accepted=accepted,
+                )
+                if not accepted:
+                    group_name = f'nations_notifications_{player.pk}'
+                    group_send = async_to_sync(get_channel_layer().group_send)
+                    transaction.on_commit(partial(group_send, group_name, {'type': 'new_turn'}), robust=True)
         return redirect('Nations:match', pk=match.match_id)
     return render(request, 'Nations/confirm_create.html', {
         'IN_PRODUCTION': settings.IN_PRODUCTION,
