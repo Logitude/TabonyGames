@@ -25,6 +25,9 @@ with open(secrets_path) as secrets_file:
 
 DEBUG = not IN_PRODUCTION
 
+# Opt-in public, read-only feed for external turn notification services.
+NATIONS_TURN_FEED_ENABLED = getenv('NATIONS_TURN_FEED_ENABLED', 'FALSE') == 'TRUE'
+
 if IN_PRODUCTION:
     ALLOWED_HOSTS = ['games.tabony.net', '208.113.131.91', '[2607:f298:5:101d:f816:3eff:fee7:bea6]']
 else:

@@ -197,7 +197,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             match_player.nation = nation
             match_player.score = player_state['score']
             match_player.resource_remainder = player_state['resource_remainder']
-            match_player.save()
+            match_player.save(update_fields=['nation', 'score', 'resource_remainder'])
 
     async def save_match(self):
         await self.save_match_to_db()
