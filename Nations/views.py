@@ -1,3 +1,5 @@
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.conf import settings
 from django.shortcuts import get_object_or_404, render, redirect
 from django.contrib.auth.decorators import login_required
@@ -67,12 +69,17 @@ def confirm_create_match(request):
             lincoln_nerf=data['lincoln_nerf']
         )
         username = request.user.username
+        users_to_notify = []
         for player_name in player_names:
             player = User.objects.get(username=player_name)
             accepted = player_name == username and data['growth_resources'] > 0
             match_player = MatchPlayer.objects.create(match=match, player=player, growth_resources=data['growth_resources'], accepted=accepted)
             match_player.save()
+            if not accepted:
+                users_to_notify.append(player)
         match.save()
+        for user in users_to_notify:
+            async_to_sync(get_channel_layer().group_send)(f'nations_notifications_{user.pk}', {'type': 'new_turn'})
         return redirect('Nations:match', pk=match.match_id)
     return render(request, 'Nations/confirm_create.html', {
         'IN_PRODUCTION': settings.IN_PRODUCTION,
