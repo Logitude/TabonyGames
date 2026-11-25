@@ -18,6 +18,7 @@ import asyncio
 import json
 import datetime
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -555,6 +556,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         await self.send_replay_info()
 
     async def receive_json(self, content):
+        received = time.monotonic_ns()
         if content is not None and 'replay' in content:
             await self.received_replay_command(content['replay'])
             return
@@ -573,6 +575,11 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             await self.received_chat(content['chat'])
         elif 'notes' in content:
             await self.received_notes(content['notes'])
+        sent = time.monotonic_ns()
+        if sent - received > 200_000_000:
+            logger.warning('receive -> send took more than a fifth of a second:')
+            logger.warning(str(content))
+            logger.warning('')
 
     async def state_change_message(self, event):
         await self.get_match_info()
