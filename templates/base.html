@@ -58,12 +58,10 @@
             var info_socket_open = false;
             var reopen_timer = null;
             var reopen_timeout = 200;
+            var page_title = '{% if turns.Nations %}({{ turns.Nations }}) {% endif %}Tabony Games';
 
             function set_page_title(event) {
-                if (!sessionStorage.getItem('page_title')) {
-                    sessionStorage.setItem('page_title', 'Tabony Games');
-                }
-                document.title = sessionStorage.getItem('page_title');
+                document.title = page_title;
             }
 
             function set_reopen_timer() {
@@ -90,7 +88,7 @@
                 info_socket.send(JSON.stringify(null));
             }
 
-            function got_message(event) {
+            function received_message(event) {
                 const data = JSON.parse(event.data);
                 if (data && Object.hasOwn(data, 'turns')) {
                     const turns = data['turns'];
@@ -104,13 +102,11 @@
                             nations_link.innerHTML = 'Nations';
                         }
                     }
-                    var page_title;
                     if (total_turns) {
                         page_title = '(' + total_turns + ') Tabony Games';
                     } else {
                         page_title = 'Tabony Games';
                     }
-                    sessionStorage.setItem('page_title', page_title);
                     set_page_title(null);
                 }
             }
@@ -140,15 +136,11 @@
                     info_socket = new WebSocket(websocket_prefix + window.location.host + '/ws/');
                     info_socket_open = false;
                     info_socket_connecting = true;
-                    info_socket.addEventListener('message', got_message);
+                    info_socket.addEventListener('message', received_message);
                     info_socket.addEventListener('open', opened);
                     info_socket.addEventListener('close', closed);
                     info_socket.addEventListener('error', errored);
                 }
-            }
-
-            function eventually_set_page_title(event) {
-                setTimeout(set_page_title, 100);
             }
 
             function if_not_hidden_reopen_info_socket_if_necessary(event) {
@@ -163,7 +155,7 @@
             window.addEventListener('focus', reopen_info_socket_if_necessary);
             window.addEventListener('resume', reopen_info_socket_if_necessary);
             window.addEventListener('online', reopen_info_socket_if_necessary);
-            window.addEventListener('load', eventually_set_page_title);
+            window.addEventListener('load', set_page_title);
         </script>
     {% endif %}
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.0/dist/js/bootstrap.bundle.min.js" integrity="sha384-U1DAWAznBHeqEIlVSCgzq+c9gqGAJn5c/t99JyeKa9xxaYpSvHU5awsuZVVFIhvj" crossorigin="anonymous"></script>

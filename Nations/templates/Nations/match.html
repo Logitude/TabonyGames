@@ -1275,13 +1275,10 @@
         const reopen_initial_timeout = 200;
         var reopen_timeout = reopen_initial_timeout;
         var notes_timer = null;
-
-        if (!sessionStorage.getItem('page_title')) {
-            sessionStorage.setItem('page_title', 'Nations');
-        }
+        var page_title = '{% if turns %}({{ turns }}) {% endif %}Nations';
 
         function set_page_title(event) {
-            document.title = sessionStorage.getItem('page_title');
+            document.title = page_title;
         }
 
         var data = null;
@@ -1428,13 +1425,11 @@
                 const turns = data['turns'];
                 var my_matches_link = document.getElementById('my_matches_link');
                 my_matches_link.innerHTML = '(' + turns + ') Matches';
-                var page_title;
                 if (turns) {
                     page_title = '(' + turns + ') Nations';
                 } else {
                     page_title = 'Nations';
                 }
-                sessionStorage.setItem('page_title', page_title);
                 set_page_title(null);
             {% endif %}
             }
