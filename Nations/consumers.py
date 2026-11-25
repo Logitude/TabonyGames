@@ -96,7 +96,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         self.match_info = MatchInfo(self.scope['url_route']['kwargs']['match_id'])
         self.replay_info = MatchInfo(self.scope['url_route']['kwargs']['match_id'])
         self.sent_initial_info = False
-        self.avoid_duplicate_updates = False
         self.match_group_name = f'nations_match_{self.match_info.match_id}'
         await self.channel_layer.group_add(self.match_group_name, self.channel_name)
         user = self.scope['user']
@@ -468,8 +467,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         growth_resources = self.match_info.growth_resources if self.match_info.growth_resources > 0 else join_info
         match = await self.get_match_from_db()
         await self.add_player_to_match_db(match, user, growth_resources)
-        await self.send_match_info()
-        self.avoid_duplicate_updates = True
+        await self.get_match_info()
         group_message = {'type': 'state_change_message', 'move': None}
         await self.channel_layer.group_send(self.match_group_name, group_message)
         await self.channel_layer.group_send(f'nations_notifications_{user.pk}', {'type': 'new_turn'})
@@ -480,8 +478,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             return
         match = await self.get_match_from_db()
         await self.remove_player_from_match_db(match, user)
-        await self.send_match_info()
-        self.avoid_duplicate_updates = True
         group_message = {'type': 'state_change_message', 'move': None}
         await self.channel_layer.group_send(self.match_group_name, group_message)
         await self.channel_layer.group_send(f'nations_notifications_{user.pk}', {'type': 'new_turn'})
@@ -496,8 +492,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         if not self.match_info.game_over and (username == self.match_info.current_player or is_superuser):
             await self.make_move(move)
             await self.save_match()
-            await self.send_match_info()
-            self.avoid_duplicate_updates = True
             group_message = {'type': 'state_change_message', 'move': move}
             await self.channel_layer.group_send(self.match_group_name, group_message)
             if self.match_info.prev_player != self.match_info.current_player:
@@ -581,12 +575,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             await self.received_notes(content['notes'])
 
     async def state_change_message(self, event):
-        if self.avoid_duplicate_updates:
-            self.avoid_duplicate_updates = False
-            return
         await self.get_match_info()
-        if event['move'] is not None:
-            await self.make_move(event['move'])
         await self.send_match_info()
 
     async def new_turn(self, event):
