@@ -75,9 +75,6 @@
             </div>
         </div>
     </div>
-    {% if not IN_PRODUCTION %}
-        <pre id="log-messages"></pre>
-    {% endif %}
     {{ match.match_id | json_script:"match-id" }}
     {{ match.player_count | json_script:"player-count" }}
     {{ match.growth_resources | json_script:"growth-resources" }}
@@ -1277,11 +1274,6 @@
         var reopen_timer = null;
         const reopen_initial_timeout = 200;
         var reopen_timeout = reopen_initial_timeout;
-        var refresh_timer = null;
-        const refresh_initial_timeout = 60000;
-        var refresh_timeout = refresh_initial_timeout;
-        var refresh_pending = false;
-        var refresh_pending_time = null;
         var notes_timer = null;
 
         if (!sessionStorage.getItem('page_title')) {
@@ -1333,15 +1325,15 @@
             return year + '-' + month + '-' + day + ' ' + hour + ':' + minute;
         }
 
-        {% if not IN_PRODUCTION %}
-            function add_log_message(message) {
-                const current_time = new Date();
-                var stamped_message = current_time.getHours() + ':' + String(current_time.getMinutes()).padStart(2, '0') + ':' + String(current_time.getSeconds()).padStart(2, '0') + '.' + String(current_time.getMilliseconds()).padStart(3, '0') + ' ' + message;
-                console.log(message);
-                var log_messages = document.getElementById('log-messages');
-                log_messages.textContent = log_messages.textContent + '\n' + stamped_message;
-            }
-        {% endif %}
+        function add_log_message(message) {
+            const current_time = new Date();
+            const hours = current_time.getHours();
+            const minutes = String(current_time.getMinutes()).padStart(2, '0');
+            const seconds = String(current_time.getSeconds()).padStart(2, '0');
+            const milliseconds = String(current_time.getMilliseconds()).padStart(3, '0');
+            const stamped_message = hours + ':' + minutes + ':' + seconds + '.' + milliseconds + ' ' + message;
+            console.log(stamped_message);
+        }
 
         function escaped(message) {
             return message.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
@@ -1358,7 +1350,122 @@
             chat_log.innerHTML = chat_log.innerHTML + '<span class="fw-light">[' + timestamp + ']</span> <span class="fw-bold">' + player + ':</span> ' + escaped(message);
         }
 
-        function reopen_match_socket_if_necessary_inner(request_update) {
+        function receive_message(event) {
+            data = JSON.parse(event.data);
+            var message_type = '';
+            if ('state' in data) {
+                message_type = 'state';
+            } else {
+                for (var key in data) {
+                    message_type = key;
+                    break;
+                }
+            }
+            add_log_message('Match socket message received. (' + message_type + ')');
+            if (data && data['players']) {
+                players_data = data['players'];
+                const player_order = data && data['state'] && data['state']['player_order'] ? data['state']['player_order'] : players_data;
+                const growth_data = data['growth_resources'];
+                const accepted_players = data['accepted'];
+                const current_player = data && data['state'] && data['state']['next_move_player'] ? data['state']['next_move_player'] : '';
+                has_accepted = accepted_players.includes(username);
+                var player_names = document.getElementById('player-names');
+                var player_html_parts = [...player_order];
+                for (var i = 0; i < player_html_parts.length; i++) {
+                    const player_name = player_html_parts[i];
+                    const highlighted_player_name = player_name == current_player ? '<span class="text-primary">' + player_name + '</span>' : player_name;
+                    if (!accepted_players.includes(player_name)) {
+                        player_html_parts[i] = '<span class="text-secondary">' + highlighted_player_name + ' (invited)</span>';
+                    } else if (growth_resources < 0) {
+                        const growth = growth_data[player_name];
+                        const growth_text = ['Emperor', 'King', 'Prince', 'Chieftain'][growth-1];
+                        player_html_parts[i] = highlighted_player_name + ' (' + growth_text + ')';
+                    } else {
+                        player_html_parts[i] = highlighted_player_name;
+                    }
+                }
+                player_names.innerHTML = 'Players: <span class="fw-bold">' + player_html_parts.join(', ') + '</span>';
+            }
+            if (data && data['state']) {
+                new_state = true;
+                state = data['state'];
+                replaying = data['replaying'];
+                replay_position = data['replay_position'];
+                move_number = data['move_number'];
+                match_log_data = data['log'].trim();
+                {% if user.is_authenticated %}
+                    if (state && state['player_order'] && state['player_order'].includes(username) && prev_notes !== null) {
+                        var notes = document.getElementById('personal-notes');
+                        notes.hidden = false;
+                    }
+                {% endif %}
+                update_state();
+            } else if (data && data['chat_log']) {
+                var chat_log = document.getElementById('chat-log');
+                chat_log.innerHTML = '';
+                for (var i = 0; i < data['chat_log'].length; i++) {
+                    add_chat_line(data['chat_log'][i]);
+                }
+                chat_log.scrollTop = chat_log.scrollHeight;
+            } else if (data && data['chat']) {
+                var chat_log = document.getElementById('chat-log');
+                add_chat_line(data['chat']);
+                chat_log.scrollTop = chat_log.scrollHeight;
+            } else if (data && data['players']) {
+                players_data = data['players'];
+                draw_if_loaded();
+            {% if user.is_authenticated %}
+            } else if (data && Object.hasOwn(data, 'notes')) {
+                if (prev_notes === null) {
+                    var notes = document.getElementById('personal-notes');
+                    notes.value = data['notes'];
+                    prev_notes = notes.value;
+                    if (state && state['player_order'] && state['player_order'].includes(username)) {
+                        notes.hidden = false;
+                    }
+                }
+            } else if (data && Object.hasOwn(data, 'turns')) {
+                const turns = data['turns'];
+                var my_matches_link = document.getElementById('my_matches_link');
+                my_matches_link.innerHTML = '(' + turns + ') Matches';
+                var page_title;
+                if (turns) {
+                    page_title = '(' + turns + ') Nations';
+                } else {
+                    page_title = 'Nations';
+                }
+                sessionStorage.setItem('page_title', page_title);
+                set_page_title(null);
+            {% endif %}
+            }
+        }
+
+        function match_socket_opened(event) {
+            add_log_message('Match socket opened.');
+            reopen_timeout = reopen_initial_timeout;
+            clear_reopen_timer();
+            match_socket.send(JSON.stringify(null));
+            add_log_message('Match socket message sent. (refresh request)');
+            match_socket_connecting = false;
+            match_socket_open = true;
+        }
+
+        function match_socket_closed(event) {
+            add_log_message('Match socket closed.');
+            set_reopen_timer();
+            match_socket_connecting = false;
+            match_socket_open = false;
+        }
+
+        function match_socket_errored(event) {
+            add_log_message('Match socket errored.');
+            match_socket_connecting = false;
+            match_socket_open = false;
+            reopen_timeout *= 2;
+            set_reopen_timer();
+        }
+
+        function reopen_match_socket_if_necessary(event) {
             clear_reopen_timer();
             if (!match_socket || !(match_socket_open || match_socket_connecting)) {
                 if (match_socket) {
@@ -1367,161 +1474,17 @@
                     match_socket = null;
                 }
                 match_socket = new WebSocket(websocket_prefix + window.location.host + '/ws/nations/' + match_id + '/');
+                add_log_message('Match socket created.');
                 match_socket_open = false;
                 match_socket_connecting = true;
-                match_socket.addEventListener('message', (event) =>
-                    {
-                        refresh_timeout = refresh_initial_timeout;
-                        clear_refresh_timer();
-                        refresh_pending = false;
-                        refresh_pending_time = null;
-                        data = JSON.parse(event.data);
-                        if (data && data['players']) {
-                            players_data = data['players'];
-                            const player_order = data && data['state'] && data['state']['player_order'] ? data['state']['player_order'] : players_data;
-                            const growth_data = data['growth_resources'];
-                            const accepted_players = data['accepted'];
-                            const current_player = data && data['state'] && data['state']['next_move_player'] ? data['state']['next_move_player'] : '';
-                            has_accepted = accepted_players.includes(username);
-                            var player_names = document.getElementById('player-names');
-                            var player_html_parts = [...player_order];
-                            for (var i = 0; i < player_html_parts.length; i++) {
-                                const player_name = player_html_parts[i];
-                                const highlighted_player_name = player_name == current_player ? '<span class="text-primary">' + player_name + '</span>' : player_name;
-                                if (!accepted_players.includes(player_name)) {
-                                    player_html_parts[i] = '<span class="text-secondary">' + highlighted_player_name + ' (invited)</span>';
-                                } else if (growth_resources < 0) {
-                                    const growth = growth_data[player_name];
-                                    const growth_text = ['Emperor', 'King', 'Prince', 'Chieftain'][growth-1];
-                                    player_html_parts[i] = highlighted_player_name + ' (' + growth_text + ')';
-                                } else {
-                                    player_html_parts[i] = highlighted_player_name;
-                                }
-                            }
-                            player_names.innerHTML = 'Players: <span class="fw-bold">' + player_html_parts.join(', ') + '</span>';
-                        }
-                        if (data && data['state']) {
-                            new_state = true;
-                            state = data['state'];
-                            replaying = data['replaying'];
-                            replay_position = data['replay_position'];
-                            move_number = data['move_number'];
-                            match_log_data = data['log'].trim();
-                            {% if user.is_authenticated %}
-                                if (state && state['player_order'] && state['player_order'].includes(username) && prev_notes !== null) {
-                                    var notes = document.getElementById('personal-notes');
-                                    notes.hidden = false;
-                                }
-                            {% endif %}
-                            update_state();
-                        } else if (data && data['chat_log']) {
-                            var chat_log = document.getElementById('chat-log');
-                            chat_log.innerHTML = '';
-                            for (var i = 0; i < data['chat_log'].length; i++) {
-                                add_chat_line(data['chat_log'][i]);
-                            }
-                            chat_log.scrollTop = chat_log.scrollHeight;
-                        } else if (data && data['chat']) {
-                            var chat_log = document.getElementById('chat-log');
-                            add_chat_line(data['chat']);
-                            chat_log.scrollTop = chat_log.scrollHeight;
-                        } else if (data && data['players']) {
-                            players_data = data['players'];
-                            draw_if_loaded();
-                        {% if user.is_authenticated %}
-                        } else if (data && Object.hasOwn(data, 'notes')) {
-                            if (prev_notes === null) {
-                                var notes = document.getElementById('personal-notes');
-                                notes.value = data['notes'];
-                                prev_notes = notes.value;
-                                if (state && state['player_order'] && state['player_order'].includes(username)) {
-                                    notes.hidden = false;
-                                }
-                            }
-                        } else if (data && Object.hasOwn(data, 'turns')) {
-                            const turns = data['turns'];
-                            var my_matches_link = document.getElementById('my_matches_link');
-                            my_matches_link.innerHTML = '(' + turns + ') Matches';
-                            var page_title;
-                            if (turns) {
-                                page_title = '(' + turns + ') Nations';
-                            } else {
-                                page_title = 'Nations';
-                            }
-                            sessionStorage.setItem('page_title', page_title);
-                            set_page_title(null);
-                        {% endif %}
-                        }
-                    }
-                );
-                match_socket.addEventListener('open', (event) =>
-                    {
-                        reopen_timeout = reopen_initial_timeout;
-                        clear_reopen_timer();
-                        match_socket.send(JSON.stringify(null));
-                        set_refresh_timer();
-                        refresh_pending = true;
-                        refresh_pending_time = null;
-                        refresh_pending_time = new Date();
-                        match_socket_connecting = false;
-                        match_socket_open = true;
-                    }
-                );
-                match_socket.addEventListener('close', (event) =>
-                    {
-                        set_reopen_timer();
-                        match_socket_connecting = false;
-                        match_socket_open = false;
-                    }
-                );
-                match_socket.addEventListener('error', (event) =>
-                    {
-                        match_socket_connecting = false;
-                        match_socket_open = false;
-                        reopen_timeout *= 2;
-                        set_reopen_timer();
-                    }
-                );
+                match_socket.addEventListener('message', receive_message);
+                match_socket.addEventListener('open', match_socket_opened);
+                match_socket.addEventListener('close', match_socket_closed);
+                match_socket.addEventListener('error', match_socket_errored);
                 if (hitboxes === null && state !== null) {
                     update_state();
                 }
-            } else if (request_update && match_socket && match_socket_open && !match_socket_connecting) {
-                var request_refresh = true;
-                if (refresh_pending) {
-                    const current_time = new Date();
-                    if (current_time - refresh_pending_time < refresh_timeout) {
-                        request_refresh = false;
-                    }
-                }
-                if (request_refresh) {
-                    if (match_socket && match_socket.readyState == WebSocket.OPEN) {
-                        match_socket.send(JSON.stringify(null));
-                    }
-                    set_refresh_timer();
-                    refresh_pending = true;
-                    refresh_pending_time = null;
-                    refresh_pending_time = new Date();
-                }
             }
-        }
-
-        function reopen_match_socket_if_necessary(event) {
-            reopen_match_socket_if_necessary_inner(true);
-        }
-
-        function reopen_match_socket_if_necessary_without_requesting_update() {
-            reopen_match_socket_if_necessary_inner(false);
-        }
-
-        function reset_match_socket(event) {
-            clear_refresh_timer();
-            if (match_socket && match_socket.readyState != WebSocket.CLOSED) {
-                match_socket.addEventListener('close', (event) => {});
-                match_socket.close();
-            }
-            match_socket = null;
-            refresh_timeout *= 2;
-            reopen_match_socket_if_necessary(null);
         }
 
         function set_reopen_timer() {
@@ -1537,22 +1500,6 @@
             if (reopen_timer) {
                 clearTimeout(reopen_timer);
                 reopen_timer = null;
-            }
-        }
-
-        function set_refresh_timer() {
-            if (refresh_timer) {
-                return;
-            }
-            if (refresh_timeout < 100000) {
-                refresh_timer = setTimeout(reset_match_socket, refresh_timeout);
-            }
-        }
-
-        function clear_refresh_timer() {
-            if (refresh_timer) {
-                clearTimeout(refresh_timer);
-                refresh_timer = null;
             }
         }
 
@@ -1578,18 +1525,20 @@
             if ((!moving_enabled || replaying) && 'move' in move) {
                 return;
             }
-            reopen_match_socket_if_necessary_without_requesting_update();
+            reopen_match_socket_if_necessary(null);
             function actually_send_message(event) {
                 if (match_socket && match_socket.readyState == WebSocket.OPEN) {
                     match_socket.send(JSON.stringify(move));
+                    var message_type = '';
+                    for (var key in move) {
+                        message_type = key;
+                        break;
+                    }
+                    add_log_message('Match socket message sent. (' + message_type + ')');
                     if ('move' in move) {
                         moving_enabled = false;
                         new_state = false;
                     }
-                    set_refresh_timer();
-                    refresh_pending = true;
-                    refresh_pending_time = null;
-                    refresh_pending_time = new Date();
                 } else if (reopen_timeout < 100000) {
                     setTimeout(actually_send_message, 100);
                 }
