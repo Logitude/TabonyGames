@@ -1,5 +1,5 @@
 from asgiref.sync import sync_to_async
-from channels.db import database_sync_to_async
+from channels.db import database_sync_to_async, aclose_old_connections
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.urls import reverse
 from django.contrib.sites.models import Site
@@ -43,4 +43,5 @@ class GamesConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({'turns': number_of_turns})
 
     async def receive_json(self, content):
+        await aclose_old_connections()
         await self.send_turns_info()

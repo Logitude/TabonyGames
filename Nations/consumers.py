@@ -1,5 +1,5 @@
 from asgiref.sync import sync_to_async
-from channels.db import database_sync_to_async
+from channels.db import database_sync_to_async, aclose_old_connections
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.conf import settings
 from django.urls import reverse
@@ -58,6 +58,7 @@ class NationsConsumer(AsyncJsonWebsocketConsumer):
         user = self.scope['user']
         if not user.is_authenticated:
             return
+        await aclose_old_connections()
         await self.send_turns_info()
 
 class MatchInfo:
@@ -523,6 +524,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         await self.send_replay_info()
 
     async def receive_json(self, content):
+        await aclose_old_connections()
         await self.get_match_info()
         self.timings = {}
         self.timings['received'] = time.monotonic_ns()
