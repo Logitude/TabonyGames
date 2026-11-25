@@ -576,8 +576,11 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         elif 'notes' in content:
             await self.received_notes(content['notes'])
         sent = time.monotonic_ns()
-        if sent - received > 200_000_000:
-            logger.warning('receive -> send took more than a fifth of a second:')
+        if sent - received > 500_000_000:
+            logger.warning('')
+            logger.warning(f'receive -> send took more than half a second:')
+            logger.warning(str(received))
+            logger.warning(str(sent))
             logger.warning(str(content))
             logger.warning('')
 
