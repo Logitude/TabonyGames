@@ -94,6 +94,7 @@ class MatchInfo:
 
 class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
+        self.timings = None
         self.match_info = MatchInfo(self.scope['url_route']['kwargs']['match_id'])
         self.replay_info = MatchInfo(self.scope['url_route']['kwargs']['match_id'])
         self.sent_initial_info = False
@@ -487,16 +488,23 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         user = self.scope['user']
         if not user.is_authenticated:
             return
+        self.timings['received move'] = time.monotonic_ns()
         await self.get_match_info()
+        self.timings['got match info'] = time.monotonic_ns()
         username = user.username
         is_superuser = user.is_superuser
         if not self.match_info.game_over and (username == self.match_info.current_player or is_superuser):
+            self.timings['checked user'] = time.monotonic_ns()
             await self.make_move(move)
+            self.timings['made move'] = time.monotonic_ns()
             await self.save_match()
+            self.timings['saved match'] = time.monotonic_ns()
             group_message = {'type': 'state_change_message', 'move': move}
             await self.channel_layer.group_send(self.match_group_name, group_message)
+            self.timings['sent group message'] = time.monotonic_ns()
             if self.match_info.prev_player != self.match_info.current_player:
                 await self.notify()
+            self.timings['posted notify'] = time.monotonic_ns()
 
     async def received_chat(self, chat):
         user = self.scope['user']
@@ -556,7 +564,8 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         await self.send_replay_info()
 
     async def receive_json(self, content):
-        received = time.monotonic_ns()
+        self.timings = {}
+        self.timings['received'] = time.monotonic_ns()
         if content is not None and 'replay' in content:
             await self.received_replay_command(content['replay'])
             return
@@ -575,14 +584,21 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             await self.received_chat(content['chat'])
         elif 'notes' in content:
             await self.received_notes(content['notes'])
-        sent = time.monotonic_ns()
-        if sent - received > 500_000_000:
+        self.timings['sent'] = time.monotonic_ns()
+        if self.timings['sent'] - self.timings['received'] > 400_000_000:
             logger.warning('')
-            logger.warning(f'receive -> send took more than half a second:')
-            logger.warning(str(received))
-            logger.warning(str(sent))
+            logger.warning(f'receive -> send took more than 0.4 seconds:')
+            logger.warning(str(self.timings['received']))
+            logger.warning(str(self.timings['sent']))
             logger.warning(str(content))
             logger.warning('')
+            prev_time = self.timings['received']
+            for (timestamp_name, timestamp_value) in self.timings.items():
+                time_diff = timestamp_value - prev_time
+                logger.warning(f'{timestamp_name:20s}: {time_diff:12d} ns ({time_diff // 1000000:6d} ms)')
+                prev_time = timestamp_value
+            logger.warning('')
+        self.timings = None
 
     async def state_change_message(self, event):
         await self.get_match_info()
