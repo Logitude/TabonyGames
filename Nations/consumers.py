@@ -455,12 +455,12 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         await self.send_turns_info()
 
     async def received_join(self, join_info):
-        await self.get_match_info()
         user = self.scope['user']
         if not user.is_authenticated:
             return
+        await self.get_match_info()
         username = user.username
-        is_superuser = self.scope['user'].is_superuser
+        is_superuser = user.is_superuser
         players = self.match_info.players
         player_count = self.match_info.player_count
         if is_superuser or (username in players and await self.has_accepted()) or (username not in players and len(players) == player_count):
@@ -475,10 +475,10 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_send(f'nations_notifications_{user.pk}', {'type': 'new_turn'})
 
     async def received_decline(self):
-        match = await self.get_match_from_db()
         user = self.scope['user']
         if not user.is_authenticated:
             return
+        match = await self.get_match_from_db()
         await self.remove_player_from_match_db(match, user)
         await self.send_match_info()
         self.avoid_duplicate_updates = True
@@ -487,10 +487,10 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_send(f'nations_notifications_{user.pk}', {'type': 'new_turn'})
 
     async def received_move(self, move):
-        await self.get_match_info()
         user = self.scope['user']
         if not user.is_authenticated:
             return
+        await self.get_match_info()
         username = user.username
         is_superuser = user.is_superuser
         if not self.match_info.game_over and (username == self.match_info.current_player or is_superuser):
@@ -504,10 +504,10 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
                 await self.notify()
 
     async def received_chat(self, chat):
-        match = await self.get_match_from_db()
         user = self.scope['user']
         if not user.is_authenticated:
             return
+        match = await self.get_match_from_db()
         chat_object = await self.save_chat_to_db(match, user, chat)
         group_message = {'type': 'chat_message', 'timestamp': chat_object.created.isoformat(), 'player': user.username, 'chat': chat}
         await self.channel_layer.group_send(self.match_group_name, group_message)
@@ -550,6 +550,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         return position
 
     async def received_replay_command(self, command):
+        await self.get_match_info()
         if self.replay_info.move_number is None:
             self.replay_info.move_number = self.match_info.move_number
         self.replay_info.move_number = await self.adjust_replay_position(self.replay_info.move_number, command)
