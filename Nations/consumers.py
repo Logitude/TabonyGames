@@ -63,6 +63,9 @@ class NationsConsumer(AsyncJsonWebsocketConsumer):
 class MatchInfo:
     def __init__(self, match_id):
         self.match_id = match_id
+        self.match = None
+        self.players = None
+        self.match_players = None
         self.player_count = None
         self.growth_resources = None
         self.extra_draft_nations = None
@@ -71,7 +74,6 @@ class MatchInfo:
         self.weighted_card_draw = None
         self.korea_nerf = None
         self.lincoln_nerf = None
-        self.players = None
         self.player_growth_resources = None
         self.replay_lines = []
         self.move_number = None
@@ -94,7 +96,7 @@ class MatchInfo:
 
 class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
-        self.timings = None
+        self.timings = {}
         self.match_info = MatchInfo(self.scope['url_route']['kwargs']['match_id'])
         self.replay_info = MatchInfo(self.scope['url_route']['kwargs']['match_id'])
         self.sent_initial_info = False
@@ -123,25 +125,20 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         return user
 
     @database_sync_to_async
-    def get_match_from_db(self):
-        try:
-            match = Match.objects.get(match_id=self.match_info.match_id)
-        except Match.DoesNotExist:
-            return None
-        return match
-
-    @database_sync_to_async
     def get_match_and_players_from_db(self):
         try:
             match = Match.objects.get(match_id=self.match_info.match_id)
         except Match.DoesNotExist:
             return (None, None, None)
         match_players = match.players.all().order_by('pk')
-        players = [match_player.player.username for match_player in match_players][:match.player_count]
-        return (match, players, match.current_player.username)
+        players = [match_player.player for match_player in match_players][:match.player_count]
+        return (match, players, match_players, match.current_player.username)
 
     async def get_match(self):
-        (match, players, current_player) = await self.get_match_and_players_from_db()
+        (match, players, match_players, current_player) = await self.get_match_and_players_from_db()
+        self.match_info.match = match
+        self.match_info.players = players
+        self.match_info.match_players = {match_player.player.username: match_player for match_player in match_players}
         self.match_info.player_count = match.player_count
         self.match_info.growth_resources = match.growth_resources
         self.match_info.extra_draft_nations = match.extra_draft_nations
@@ -150,19 +147,17 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         self.match_info.weighted_card_draw = match.weighted_card_draw
         self.match_info.korea_nerf = match.korea_nerf
         self.match_info.lincoln_nerf = match.lincoln_nerf
-        self.match_info.players = players
         self.match_info.replay_lines = match.replay.strip().splitlines()
         self.match_info.current_player = current_player
         self.match_info.game_over = match.game_over
-        self.match_info.player_growth_resources = {player: await self.get_growth_resources_from_db(player) for player in players}
+        self.match_info.player_growth_resources = {player.username: await self.get_growth_resources(player) for player in players}
 
     @database_sync_to_async
     def save_match_to_db(self):
-        try:
-            match = Match.objects.get(match_id=self.match_info.match_id)
-        except Match.DoesNotExist:
-            return
+        self.timings['setting replay'] = time.monotonic_ns()
+        match = self.match_info.match
         match.replay = '\n'.join(self.match_info.replay_lines).strip() + '\n'
+        self.timings['set replay'] = time.monotonic_ns()
         if self.match_info.game_over:
             user = get_deleted_user()
         else:
@@ -170,6 +165,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
                 user = User.objects.get(username=self.match_info.current_player)
             except User.DoesNotExist:
                 user = get_deleted_user()
+        self.timings['got current player object'] = time.monotonic_ns()
         match.current_player = user
         if self.match_info.state is not None:
             match.current_player_order = ' '.join(self.match_info.state['player_order'])
@@ -177,59 +173,35 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         match.game_over = self.match_info.game_over
         if self.match_info.prev_player != self.match_info.current_player:
             match.new_turn = Now()
-        match.save()
+        self.timings['set other fields'] = time.monotonic_ns()
+        match.save(update_fields=['replay', 'current_player', 'current_player_order', 'current_round', 'game_over', 'new_turn'])
 
     @database_sync_to_async
-    def save_player_info_to_db(self, username):
-        try:
-            user = User.objects.get(username=username)
-        except User.DoesNotExist:
-            return
-        try:
-            match = Match.objects.get(match_id=self.match_info.match_id)
-        except Match.DoesNotExist:
-            return
-        try:
-            match_player = match.players.get(player=user)
-        except MatchPlayer.DoesNotExist:
-            return
-        player_state = self.match_info.state['players'][username]
+    def save_player_info_to_db(self, user):
+        match_player = self.match_info.match_players[user.username]
+        player_state = self.match_info.state['players'][user.username]
         nation = player_state['nation']
         if nation:
             match_player.nation = nation
             match_player.score = player_state['score']
             match_player.resource_remainder = player_state['resource_remainder']
-            match_player.save()
+            match_player.save(update_fields=['nation', 'score', 'resource_remainder'])
 
     async def save_match(self):
+        self.timings['starting to save match'] = time.monotonic_ns()
         await self.save_match_to_db()
+        self.timings['saved match to db'] = time.monotonic_ns()
         if self.match_info.state is not None:
             for player in self.match_info.players:
                 await self.save_player_info_to_db(player)
+        self.timings['saved player info to db'] = time.monotonic_ns()
 
-    @database_sync_to_async
-    def get_growth_resources_from_db(self, username):
-        try:
-            user = User.objects.get(username=username)
-        except User.DoesNotExist:
-            return -1
-        try:
-            match = Match.objects.get(match_id=self.match_info.match_id)
-        except Match.DoesNotExist:
-            return -1
-        try:
-            match_player = match.players.get(player=user)
-        except MatchPlayer.DoesNotExist:
-            return -1
-        return match_player.growth_resources
+    async def get_growth_resources(self, user):
+        return self.match_info.match_players[user.username].growth_resources
 
     @database_sync_to_async
     def get_accepted_players_from_db(self):
-        try:
-            match = Match.objects.get(match_id=self.match_info.match_id)
-        except Match.DoesNotExist:
-            return []
-        return [player.player.username for player in match.players.filter(accepted=True)]
+        return [player.player.username for player in self.match_info.match.players.filter(accepted=True)]
 
     async def has_accepted(self):
         if not self.scope['user'].is_authenticated:
@@ -239,74 +211,63 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def add_player_to_match_db(self, match, player, growth_resources):
         try:
-            match_player = match.players.get(player=player)
-        except MatchPlayer.DoesNotExist:
+            match_player = self.match_info.match_players[player.username]
+        except KeyError:
             match_player = None
         if match_player is not None:
             match_player.growth_resources = growth_resources
             match_player.accepted = True
-            match_player.save()
+            match_player.save(update_fields=['growth_resources', 'accepted'])
         else:
             MatchPlayer.objects.create(match=match, player=player, growth_resources=growth_resources, accepted=True)
         match.new_turn = Now()
-        match.save()
+        match.save(update_fields=['new_turn'])
 
     @database_sync_to_async
-    def remove_player_from_match_db(self, match, player):
-        try:
-            match_player = match.players.get(player=player)
-        except MatchPlayer.DoesNotExist:
-            return
+    def remove_player_from_match_db(self, player):
+        match_player = self.match_info.match_players[player.username]
         match_player.delete()
         match.new_turn = Now()
-        match.save()
+        match.save(update_fields['new_turn'])
 
     @database_sync_to_async
     def get_chat_log_from_db(self):
-        try:
-            match = Match.objects.get(match_id=self.match_info.match_id)
-        except Match.DoesNotExist:
-            return None
+        match = self.match_info.match
         user = self.scope['user']
         if user.is_authenticated:
             try:
-                match_player = match.players.get(player=user)
-            except MatchPlayer.DoesNotExist:
+                match_player = self.match_info.match_players[user.username]
+            except KeyError:
                 match_player = None
         else:
             match_player = None
         chats = list(match.chats.all().order_by('pk'))
         if match_player is not None and chats:
             match_player.last_chat = chats[-1].pk
-            match_player.save()
+            match_player.save(update_fields=['last_chat'])
         chat_log = []
         for chat in chats:
             chat_log.append({'timestamp': chat.created.isoformat(), 'player': chat.player.username, 'message': chat.message})
         return chat_log
 
     @database_sync_to_async
-    def save_chat_to_db(self, match, player, message):
-        chat = NationsChat.objects.create(match=match, player=player, message=message)
+    def save_chat_to_db(self, player, message):
+        chat = NationsChat.objects.create(match=self.match_info.match, player=player, message=message)
         try:
-            match_player = match.players.get(player=player)
-        except MatchPlayer.DoesNotExist:
+            match_player = self.match_info.match_players[player.username]
+        except KeyError:
             match_player = None
         if match_player is not None:
             match_player.last_chat = chat.pk
-            match_player.save()
+            match_player.save(update_fields=['last_chat'])
         return chat
 
-    @database_sync_to_async
-    def get_notes_from_db(self):
+    async def get_notes(self):
         user = self.scope['user']
         if user.is_authenticated:
             try:
-                match = Match.objects.get(match_id=self.match_info.match_id)
-            except Match.DoesNotExist:
-                match_player = None
-            try:
-                match_player = match.players.get(player=user)
-            except MatchPlayer.DoesNotExist:
+                match_player = self.match_info.match_players[user.username]
+            except KeyError:
                 match_player = None
         else:
             match_player = None
@@ -319,18 +280,14 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         user = self.scope['user']
         if user.is_authenticated:
             try:
-                match = Match.objects.get(match_id=self.match_info.match_id)
-            except Match.DoesNotExist:
-                match_player = None
-            try:
-                match_player = match.players.get(player=user)
-            except MatchPlayer.DoesNotExist:
+                match_player = self.match_info.match_players[user.username]
+            except KeyError:
                 match_player = None
         else:
             match_player = None
         if match_player is not None:
             match_player.notes = notes[:4000]
-            match_player.save()
+            match_player.save(update_fields=['notes'])
 
     @database_sync_to_async
     def get_number_of_turns_from_db(self):
@@ -369,7 +326,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             logger.warning(replay)
             logger.warning(move)
             logger.warning(self.match_info.match_id)
-            logger.warning(self.match_info.players)
+            logger.warning([player.username for player in self.match_info.players])
             import traceback
             traceback.print_exc()
         try:
@@ -435,7 +392,8 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             raise TerminatePlay()
 
         rules = self.match_info.rules()
-        nations_match = nations.Match(player_names=self.match_info.players, move_getter=move_getter, rules=rules)
+        player_names = [player.username for player in self.match_info.players]
+        nations_match = nations.Match(player_names=player_names, move_getter=move_getter, rules=rules)
         try:
             nations_match.play()
         except TerminatePlay:
@@ -460,15 +418,13 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         user = self.scope['user']
         if not user.is_authenticated:
             return
-        username = user.username
         is_superuser = user.is_superuser
         players = self.match_info.players
         player_count = self.match_info.player_count
-        if is_superuser or (username in players and await self.has_accepted()) or (username not in players and len(players) == player_count):
+        if is_superuser or (user in players and await self.has_accepted()) or (user not in players and len(players) == player_count):
             return
         growth_resources = self.match_info.growth_resources if self.match_info.growth_resources > 0 else join_info
-        match = await self.get_match_from_db()
-        await self.add_player_to_match_db(match, user, growth_resources)
+        await self.add_player_to_match_db(self.match_info.match, user, growth_resources)
         await self.get_match_info()
         await self.send_match_info()
         self.avoid_duplicate_updates = True
@@ -480,8 +436,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         user = self.scope['user']
         if not user.is_authenticated:
             return
-        match = await self.get_match_from_db()
-        await self.remove_player_from_match_db(match, user)
+        await self.remove_player_from_match_db(user)
         await self.get_match_info()
         await self.send_match_info()
         self.avoid_duplicate_updates = True
@@ -503,7 +458,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             await self.save_match()
             self.timings['saved match'] = time.monotonic_ns()
             await self.send_match_info()
-            self.timings['made move'] = time.monotonic_ns()
+            self.timings['sent match info'] = time.monotonic_ns()
             self.avoid_duplicate_updates = True
             group_message = {'type': 'state_change_message', 'move': move}
             await self.channel_layer.group_send(self.match_group_name, group_message)
@@ -516,8 +471,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         user = self.scope['user']
         if not user.is_authenticated:
             return
-        match = await self.get_match_from_db()
-        chat_object = await self.save_chat_to_db(match, user, chat)
+        chat_object = await self.save_chat_to_db(user, chat)
         group_message = {'type': 'chat_message', 'timestamp': chat_object.created.isoformat(), 'player': user.username, 'chat': chat}
         await self.channel_layer.group_send(self.match_group_name, group_message)
 
@@ -572,6 +526,8 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         await self.get_match_info()
         self.timings = {}
         self.timings['received'] = time.monotonic_ns()
+        await self.get_match_info()
+        self.timings['got match info'] = time.monotonic_ns()
         if content is not None and 'replay' in content:
             await self.received_replay_command(content['replay'])
             return
@@ -591,9 +547,9 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         elif 'notes' in content:
             await self.received_notes(content['notes'])
         self.timings['sent'] = time.monotonic_ns()
-        if self.timings['sent'] - self.timings['received'] > 400_000_000:
+        if self.timings['sent'] - self.timings['received'] > 300_000_000:
             logger.warning('')
-            logger.warning(f'receive -> send took more than 0.4 seconds:')
+            logger.warning(f'receive -> send took more than 0.3 seconds:')
             logger.warning(str(self.timings['received']))
             logger.warning(str(self.timings['sent']))
             logger.warning(str(content))
@@ -601,10 +557,10 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             prev_time = self.timings['received']
             for (timestamp_name, timestamp_value) in self.timings.items():
                 time_diff = timestamp_value - prev_time
-                logger.warning(f'{timestamp_name:20s}: {time_diff:12d} ns ({time_diff // 1000000:6d} ms)')
+                logger.warning(f'{timestamp_name:30s}: {time_diff:12d} ns ({time_diff // 1000000:6d} ms)')
                 prev_time = timestamp_value
             logger.warning('')
-        self.timings = None
+        self.timings = {}
 
     async def state_change_message(self, event):
         if self.avoid_duplicate_updates:
@@ -628,15 +584,16 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         replay_lines = self.match_info.replay_lines
         players = self.match_info.players
         player_growth_resources = self.match_info.player_growth_resources
-        if replay_lines and players and player_growth_resources and all(player in player_growth_resources for player in players):
-            accepted_players = players
+        if replay_lines and players and player_growth_resources and all(player.username in player_growth_resources for player in players):
+            accepted_players = [player.username for player in players]
         else:
             accepted_players = await self.get_accepted_players_from_db()
+        player_names = [player.username for player in self.match_info.players]
         message = {
             'replaying': False,
             'replay_position': self.match_info.move_number,
             'move_number': self.match_info.move_number,
-            'players': players,
+            'players': player_names,
             'accepted': accepted_players,
             'growth_resources': player_growth_resources,
             'state': self.match_info.state,
@@ -647,12 +604,13 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
 
     async def send_replay_info(self):
         self.replay_info.state['round_starts'] = dict(self.match_info.state['round_starts'])
+        player_names = [player.username for player in self.match_info.players]
         message = {
             'replaying': True,
             'replay_position': self.replay_info.move_number,
             'move_number': self.match_info.move_number,
-            'players': self.match_info.players,
-            'accepted': self.match_info.players,
+            'players': player_names,
+            'accepted': player_names,
             'growth_resources': self.match_info.player_growth_resources,
             'state': self.replay_info.state,
             'log': self.replay_info.log
@@ -682,7 +640,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         await self.get_chat_log_from_db()
 
     async def send_notes(self):
-        notes = await self.get_notes_from_db()
+        notes = await self.get_notes()
         message = {
             'notes': notes
         }
@@ -699,11 +657,10 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
                 event_loop = asyncio.get_event_loop()
                 event_loop.create_task(self.notify_user(self.match_info.current_player, False))
         if self.match_info.game_over:
-            for player_name in self.match_info.players:
-                player_user = await self.get_user_from_db(player_name)
-                if player_user.turn_notification_emails:
+            for player in self.match_info.players:
+                if player.turn_notification_emails:
                     event_loop = asyncio.get_event_loop()
-                    event_loop.create_task(self.notify_user(player_name, True))
+                    event_loop.create_task(self.notify_user(player.username, True))
 
     async def notify_user(self, username, game_over):
         user = await self.get_user_from_db(username)
