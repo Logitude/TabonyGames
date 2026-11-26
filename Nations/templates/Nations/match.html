@@ -991,7 +991,7 @@
             }
         }
 
-        var marked_cards = [];
+        var marked_cards = {};
 
         var global_effects = [];
 
@@ -2539,8 +2539,13 @@
                         'enabled': true
                     });
                 }
-                if (marked_cards.includes(card)) {
-                    draw_image('MarkerBig', box[0] + markers_box[0], box[1] + markers_box[1]);
+                if (card in marked_cards) {
+                    const number_of_markers = marked_cards[card];
+                    const marker_box = [box[0] + markers_box[0], box[1] + markers_box[1], markers_box[2], markers_box[3]];
+                    draw_image('MarkerBig', marker_box[0], marker_box[1]);
+                    if (number_of_markers > 1) {
+                        draw_text(number_of_markers, marker_box[0] + 28, marker_box[1] + 30);
+                    }
                 }
             }
             vertical_offset += board_box[3];
@@ -3315,7 +3320,7 @@
             var new_image = false;
             var all_nations = [];
             var all_cards = [];
-            marked_cards = [];
+            marked_cards = {};
             global_effects = [];
             for (var i = 0; i < state['available_nations'].length; i++) {
                 const nation = state['available_nations'][i];
@@ -3373,7 +3378,9 @@
                         all_cards.push(card);
                         const card_info = cards[card];
                         if (card_info['marked']) {
-                            marked_cards.push(...card_info['marked']);
+                            for (var marked_card in card_info['marked']) {
+                                marked_cards[marked_card] = card_info['marked'][marked_card];
+                            }
                         }
                     }
                     if (card && cards[card]['global']) {
