@@ -19,6 +19,9 @@ import json
 import datetime
 import logging
 import time
+import cProfile
+import pstats
+import io
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +100,7 @@ class MatchInfo:
 
 class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
+        self.profiler = None
         self.timings = {}
         self.match_info = MatchInfo(self.scope['url_route']['kwargs']['match_id'])
         self.replay_info = MatchInfo(self.scope['url_route']['kwargs']['match_id'])
@@ -175,7 +179,12 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         if self.match_info.prev_player != self.match_info.current_player:
             match.new_turn = Now()
         self.timings['set other fields'] = time.monotonic_ns()
+        if self.profiler is not None:
+            self.profiler.enable()
         match.save(update_fields=['replay', 'current_player', 'current_player_order', 'current_round', 'game_over', 'new_turn'])
+        if self.profiler is not None:
+            self.profiler.disable()
+        self.timings['saved match to db'] = time.monotonic_ns()
 
     @database_sync_to_async
     def save_player_info_to_db(self, user):
@@ -195,7 +204,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
     async def save_match(self):
         self.timings['starting to save match'] = time.monotonic_ns()
         await self.save_match_to_db()
-        self.timings['saved match to db'] = time.monotonic_ns()
         if self.match_info.state is not None:
             for player in self.match_info.players:
                 await self.save_player_info_to_db(player)
@@ -530,6 +538,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
     async def receive_json(self, content):
         await aclose_old_connections()
         await self.get_match_info()
+        self.profiler = cProfile.Profile()
         self.timings = {}
         self.timings['received'] = time.monotonic_ns()
         await self.get_match_info()
@@ -560,13 +569,21 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             logger.warning(str(self.timings['sent']))
             logger.warning(str(content))
             logger.warning('')
+            saved_match_to_db_ns = 0
             prev_time = self.timings['received']
             for (timestamp_name, timestamp_value) in self.timings.items():
                 time_diff = timestamp_value - prev_time
                 logger.warning(f'{timestamp_name:30s}: {time_diff:12d} ns ({time_diff // 1000000:6d} ms)')
                 prev_time = timestamp_value
+                if timestamp_name == 'saved match to db':
+                    saved_match_to_db_ns = time_diff
             logger.warning('')
+            if saved_match_to_db_ns > 30_000_000:
+                s = io.StringIO()
+                stats = pstats.Stats(self.profiler, stream=s).sort_stats('tottime').print_stats(20)
+                logger.warning(s.getvalue())
         self.timings = {}
+        self.profiler = None
 
     async def state_change_message(self, event):
         if self.avoid_duplicate_updates:
