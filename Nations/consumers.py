@@ -186,7 +186,11 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             match_player.nation = nation
             match_player.score = player_state['score']
             match_player.resource_remainder = player_state['resource_remainder']
-            match_player.save(update_fields=['nation', 'score', 'resource_remainder'])
+        else:
+            match_player.nation = ''
+            match_player.score = 0
+            match_player.resource_remainder = 0
+        match_player.save(update_fields=['nation', 'score', 'resource_remainder'])
 
     async def save_match(self):
         self.timings['starting to save match'] = time.monotonic_ns()
