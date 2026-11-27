@@ -1504,7 +1504,7 @@
                     reopen_match_socket_if_necessary(event);
                 }
                 {% if user.is_authenticated %}
-                send_notes(null);
+                    send_notes(null);
                 {% endif %}
             }
         );
@@ -1558,28 +1558,28 @@
         );
 
         {% if user.is_authenticated %}
-        function send_notes(event) {
-            var notes = document.getElementById('personal-notes');
-            if (prev_notes !== null && prev_notes != notes.value) {
-                send_message({'notes': notes.value});
-                prev_notes = notes.value;
-            }
-            if (notes_timer) {
-                clearTimeout(notes_timer);
-                notes_timer = null;
-            }
-        }
-
-        document.getElementById('personal-notes').addEventListener('input', (event) =>
-            {
-                if (!notes_timer) {
-                    notes_timer = setTimeout(send_notes, 1000);
+            function send_notes(event) {
+                var notes = document.getElementById('personal-notes');
+                if (prev_notes !== null && prev_notes != notes.value) {
+                    send_message({'notes': notes.value});
+                    prev_notes = notes.value;
+                }
+                if (notes_timer) {
+                    clearTimeout(notes_timer);
+                    notes_timer = null;
                 }
             }
-        );
 
-        window.addEventListener('beforeunload', send_notes);
-        window.addEventListener('unload', send_notes);
+            document.getElementById('personal-notes').addEventListener('input', (event) =>
+                {
+                    if (!notes_timer) {
+                        notes_timer = setTimeout(send_notes, 1000);
+                    }
+                }
+            );
+
+            window.addEventListener('beforeunload', send_notes);
+            window.addEventListener('pagehide', send_notes);
         {% endif %}
 
         document.body.style = 'background-color: ' + background_color + ';';
