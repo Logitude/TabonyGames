@@ -159,10 +159,8 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         self.match_info.player_growth_resources = {player.username: await self.get_growth_resources(player) for player in players}
 
     def save_match_to_db(self):
-        self.timings['setting replay'] = time.monotonic_ns()
         match = self.match_info.match
         match.replay = '\n'.join(self.match_info.replay_lines).strip() + '\n'
-        self.timings['set replay'] = time.monotonic_ns()
         if self.match_info.game_over:
             user = get_deleted_user()
         else:
@@ -170,7 +168,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
                 user = User.objects.get(username=self.match_info.current_player)
             except User.DoesNotExist:
                 user = get_deleted_user()
-        self.timings['got current player object'] = time.monotonic_ns()
         match.current_player = user
         if self.match_info.state is not None:
             match.current_player_order = ' '.join(self.match_info.state['player_order'])
@@ -178,13 +175,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         match.game_over = self.match_info.game_over
         if self.match_info.prev_player != self.match_info.current_player:
             match.new_turn = Now()
-        self.timings['set other fields'] = time.monotonic_ns()
-        if self.profiler is not None:
-            self.profiler.enable()
         match.save(update_fields=['replay', 'current_player', 'current_player_order', 'current_round', 'game_over', 'new_turn'])
-        if self.profiler is not None:
-            self.profiler.disable()
-        self.timings['saved match to db'] = time.monotonic_ns()
 
     def save_player_info_to_db(self, user):
         match_player = self.match_info.match_players[user.username]
@@ -208,7 +199,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         if self.match_info.state is not None:
             for player in self.match_info.players:
                 self.save_player_info_to_db(player)
-        self.timings['saved player info to db'] = time.monotonic_ns()
 
     async def get_growth_resources(self, user):
         return self.match_info.match_players[user.username].growth_resources
@@ -469,7 +459,11 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             self.timings['checked user'] = time.monotonic_ns()
             await self.make_move(move)
             self.timings['made move'] = time.monotonic_ns()
+            if self.profiler is not None:
+                self.profiler.enable()
             await self.save_match()
+            if self.profiler is not None:
+                self.profiler.disable()
             self.timings['saved match'] = time.monotonic_ns()
             await self.send_match_info()
             self.timings['sent match info'] = time.monotonic_ns()
