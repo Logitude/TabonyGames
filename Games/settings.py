@@ -119,6 +119,7 @@ if IN_PRODUCTION:
             'PASSWORD': db_password,
             'HOST': 'localhost',
             'PORT': '5435',
+            'CONN_MAX_AGE': 1200,
         }
     }
 else:

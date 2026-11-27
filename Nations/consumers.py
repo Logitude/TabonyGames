@@ -562,9 +562,9 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         elif 'notes' in content:
             await self.received_notes(content['notes'])
         self.timings['sent'] = time.monotonic_ns()
-        if self.timings['sent'] - self.timings['received'] > 300_000_000:
+        if self.timings['sent'] - self.timings['received'] > 100_000_000:
             logger.warning('')
-            logger.warning(f'receive -> send took more than 0.3 seconds:')
+            logger.warning(f'receive -> send took more than 0.1 seconds:')
             logger.warning(str(self.timings['received']))
             logger.warning(str(self.timings['sent']))
             logger.warning(str(content))
@@ -578,7 +578,7 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
                 if timestamp_name == 'saved match to db':
                     saved_match_to_db_ns = time_diff
             logger.warning('')
-            if saved_match_to_db_ns > 30_000_000:
+            if saved_match_to_db_ns > 10_000_000:
                 s = io.StringIO()
                 stats = pstats.Stats(self.profiler, stream=s).sort_stats('tottime').print_stats(20)
                 logger.warning(s.getvalue())
