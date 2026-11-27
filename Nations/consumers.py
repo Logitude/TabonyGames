@@ -563,23 +563,27 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         elif 'notes' in content:
             await self.received_notes(content['notes'])
         self.timings['sent'] = time.monotonic_ns()
-        if self.timings['sent'] - self.timings['received'] > 100_000_000:
+        if 'posted notify' in self.timings and 'sent group message' in self.timings:
+            time_diff = self.timings['sent group message'] - self.timings['received']
+        else:
+            time_diff = self.timings['sent'] - self.timings['received']
+        if time_diff > 30_000_000:
             logger.warning('')
-            logger.warning(f'receive -> send took more than 0.1 seconds:')
+            logger.warning(f'receive -> send took more than 0.03 seconds:')
             logger.warning(str(self.timings['received']))
             logger.warning(str(self.timings['sent']))
             logger.warning(str(content))
             logger.warning('')
-            saved_match_to_db_ns = 0
+            saved_match_ns = 0
             prev_time = self.timings['received']
             for (timestamp_name, timestamp_value) in self.timings.items():
                 time_diff = timestamp_value - prev_time
                 logger.warning(f'{timestamp_name:30s}: {time_diff:12d} ns ({time_diff // 1000000:6d} ms)')
                 prev_time = timestamp_value
-                if timestamp_name == 'saved match to db':
-                    saved_match_to_db_ns = time_diff
+                if timestamp_name == 'saved match':
+                    saved_match_ns = time_diff
             logger.warning('')
-            if saved_match_to_db_ns > 10_000_000:
+            if saved_match_ns > 5_000_000:
                 s = io.StringIO()
                 stats = pstats.Stats(self.profiler, stream=s).sort_stats('tottime').print_stats(20)
                 logger.warning(s.getvalue())
