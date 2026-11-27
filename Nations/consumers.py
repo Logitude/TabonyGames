@@ -2,6 +2,7 @@ from asgiref.sync import sync_to_async
 from channels.db import database_sync_to_async, aclose_old_connections
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from django.conf import settings
+from django.db import transaction
 from django.urls import reverse
 from django.contrib.sites.models import Site
 from django.core.mail import send_mail
@@ -157,7 +158,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         self.match_info.game_over = match.game_over
         self.match_info.player_growth_resources = {player.username: await self.get_growth_resources(player) for player in players}
 
-    @database_sync_to_async
     def save_match_to_db(self):
         self.timings['setting replay'] = time.monotonic_ns()
         match = self.match_info.match
@@ -186,7 +186,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             self.profiler.disable()
         self.timings['saved match to db'] = time.monotonic_ns()
 
-    @database_sync_to_async
     def save_player_info_to_db(self, user):
         match_player = self.match_info.match_players[user.username]
         player_state = self.match_info.state['players'][user.username]
@@ -201,12 +200,14 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             match_player.resource_remainder = 0
         match_player.save(update_fields=['nation', 'score', 'resource_remainder'])
 
-    async def save_match(self):
+    @database_sync_to_async
+    @transaction.atomic
+    def save_match(self):
         self.timings['starting to save match'] = time.monotonic_ns()
-        await self.save_match_to_db()
+        self.save_match_to_db()
         if self.match_info.state is not None:
             for player in self.match_info.players:
-                await self.save_player_info_to_db(player)
+                self.save_player_info_to_db(player)
         self.timings['saved player info to db'] = time.monotonic_ns()
 
     async def get_growth_resources(self, user):
