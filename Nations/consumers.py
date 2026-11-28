@@ -19,10 +19,6 @@ import asyncio
 import json
 import datetime
 import logging
-import time
-import cProfile
-import pstats
-import io
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +97,6 @@ class MatchInfo:
 
 class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
-        self.profiler = None
-        self.timings = {}
         self.match_info = MatchInfo(self.scope['url_route']['kwargs']['match_id'])
         self.replay_info = MatchInfo(self.scope['url_route']['kwargs']['match_id'])
         self.sent_initial_info = False
@@ -194,7 +188,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     @transaction.atomic
     def save_match(self):
-        self.timings['starting to save match'] = time.monotonic_ns()
         self.save_match_to_db()
         if self.match_info.state is not None:
             for player in self.match_info.players:
@@ -452,28 +445,17 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
         user = self.scope['user']
         if not user.is_authenticated:
             return
-        self.timings['received move'] = time.monotonic_ns()
         username = user.username
         is_superuser = user.is_superuser
         if not self.match_info.game_over and (username == self.match_info.current_player or is_superuser):
-            self.timings['checked user'] = time.monotonic_ns()
             await self.make_move(move)
-            self.timings['made move'] = time.monotonic_ns()
-            if self.profiler is not None:
-                self.profiler.enable()
             await self.save_match()
-            if self.profiler is not None:
-                self.profiler.disable()
-            self.timings['saved match'] = time.monotonic_ns()
             await self.send_match_info()
-            self.timings['sent match info'] = time.monotonic_ns()
             self.avoid_duplicate_updates = True
             group_message = {'type': 'state_change_message', 'move': move}
             await self.channel_layer.group_send(self.match_group_name, group_message)
-            self.timings['sent group message'] = time.monotonic_ns()
             if self.match_info.prev_player != self.match_info.current_player:
                 await self.notify()
-            self.timings['posted notify'] = time.monotonic_ns()
 
     async def received_chat(self, chat):
         user = self.scope['user']
@@ -533,11 +515,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
     async def receive_json(self, content):
         await aclose_old_connections()
         await self.get_match_info()
-        self.profiler = cProfile.Profile()
-        self.timings = {}
-        self.timings['received'] = time.monotonic_ns()
-        await self.get_match_info()
-        self.timings['got match info'] = time.monotonic_ns()
         if content is not None and 'replay' in content:
             await self.received_replay_command(content['replay'])
             return
@@ -556,33 +533,6 @@ class NationsMatchConsumer(AsyncJsonWebsocketConsumer):
             await self.received_chat(content['chat'])
         elif 'notes' in content:
             await self.received_notes(content['notes'])
-        self.timings['sent'] = time.monotonic_ns()
-        if 'posted notify' in self.timings and 'sent group message' in self.timings:
-            time_diff = self.timings['sent group message'] - self.timings['received']
-        else:
-            time_diff = self.timings['sent'] - self.timings['received']
-        if time_diff > 30_000_000:
-            logger.warning('')
-            logger.warning(f'receive -> send took more than 0.03 seconds:')
-            logger.warning(str(self.timings['received']))
-            logger.warning(str(self.timings['sent']))
-            logger.warning(str(content))
-            logger.warning('')
-            saved_match_ns = 0
-            prev_time = self.timings['received']
-            for (timestamp_name, timestamp_value) in self.timings.items():
-                time_diff = timestamp_value - prev_time
-                logger.warning(f'{timestamp_name:30s}: {time_diff:12d} ns ({time_diff // 1000000:6d} ms)')
-                prev_time = timestamp_value
-                if timestamp_name == 'saved match':
-                    saved_match_ns = time_diff
-            logger.warning('')
-            if saved_match_ns > 5_000_000:
-                s = io.StringIO()
-                stats = pstats.Stats(self.profiler, stream=s).sort_stats('tottime').print_stats(20)
-                logger.warning(s.getvalue())
-        self.timings = {}
-        self.profiler = None
 
     async def state_change_message(self, event):
         if self.avoid_duplicate_updates:

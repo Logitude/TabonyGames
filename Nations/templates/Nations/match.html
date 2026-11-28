@@ -1349,16 +1349,6 @@
 
         function receive_message(event) {
             data = JSON.parse(event.data);
-            var message_type = '';
-            if ('state' in data) {
-                message_type = 'state';
-            } else {
-                for (var key in data) {
-                    message_type = key;
-                    break;
-                }
-            }
-            add_log_message('Match socket message received. (' + message_type + ')');
             if (data && data['players']) {
                 players_data = data['players'];
                 const player_order = data && data['state'] && data['state']['player_order'] ? data['state']['player_order'] : players_data;
@@ -1436,24 +1426,20 @@
         }
 
         function match_socket_opened(event) {
-            add_log_message('Match socket opened.');
             reopen_timeout = reopen_initial_timeout;
             clear_reopen_timer();
             match_socket.send(JSON.stringify(null));
-            add_log_message('Match socket message sent. (refresh request)');
             match_socket_connecting = false;
             match_socket_open = true;
         }
 
         function match_socket_closed(event) {
-            add_log_message('Match socket closed.');
             set_reopen_timer();
             match_socket_connecting = false;
             match_socket_open = false;
         }
 
         function match_socket_errored(event) {
-            add_log_message('Match socket errored.');
             match_socket_connecting = false;
             match_socket_open = false;
             reopen_timeout *= 2;
@@ -1469,7 +1455,6 @@
                     match_socket = null;
                 }
                 match_socket = new WebSocket(websocket_prefix + window.location.host + '/ws/nations/' + match_id + '/');
-                add_log_message('Match socket created.');
                 match_socket_open = false;
                 match_socket_connecting = true;
                 match_socket.addEventListener('message', receive_message);
@@ -1524,12 +1509,6 @@
             function actually_send_message(event) {
                 if (match_socket && match_socket.readyState == WebSocket.OPEN) {
                     match_socket.send(JSON.stringify(move));
-                    var message_type = '';
-                    for (var key in move) {
-                        message_type = key;
-                        break;
-                    }
-                    add_log_message('Match socket message sent. (' + message_type + ')');
                     if ('move' in move) {
                         moving_enabled = false;
                         new_state = false;
